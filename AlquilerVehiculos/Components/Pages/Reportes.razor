@@ -1,0 +1,274 @@
+@page "/reportes"
+@rendermode InteractiveServer
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+
+@using Microsoft.EntityFrameworkCore
+@using AlquilerVehiculos.Data
+@inject IDbContextFactory<AlquilerDbContext> DbFactory
+
+<PageTitle>Reportes</PageTitle>
+<h1>Reportes</h1>
+<p class="text-muted">Consulta información del sistema sin modificar registros.</p>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-4">
+        <label class="form-label">Desde</label>
+        <InputDate class="form-control" @bind-Value="fechaDesde" />
+    </div>
+    <div class="col-md-4">
+        <label class="form-label">Hasta</label>
+        <InputDate class="form-control" @bind-Value="fechaHasta" />
+    </div>
+    <div class="col-md-4 d-flex align-items-end">
+        <button class="btn btn-primary" disabled="@cargando" @onclick="CargarDatos">
+            @(cargando ? "Consultando..." : "Consultar reportes")
+        </button>
+    </div>
+</div>
+
+<p class="text-muted small">Las fechas filtran pagos, contratos, reservas y mantenimientos por su fecha de registro o inicio. Los totales de vehículos y clientes son actuales.</p>
+
+@if (!string.IsNullOrEmpty(error))
+{
+    <div class="alert alert-danger">@error</div>
+}
+else if (cargando)
+{
+    <p>Cargando reportes...</p>
+}
+else
+{
+    <h2 class="h4 mt-4">Vehículos</h2>
+    <div class="row g-3 mb-3">
+        <div class="col-md-3"><div class="card card-body"><strong>Total</strong><span class="fs-4">@totalVehiculos</span></div></div>
+        <div class="col-md-3"><div class="card card-body"><strong>Activos</strong><span class="fs-4">@vehiculosActivos</span></div></div>
+        <div class="col-md-3"><div class="card card-body"><strong>En mantenimiento</strong><span class="fs-4">@vehiculosMantenimiento</span></div></div>
+        <div class="col-md-3"><div class="card card-body"><strong>Fuera de servicio</strong><span class="fs-4">@vehiculosFueraServicio</span></div></div>
+    </div>
+    <h3 class="h6">Vehículos por categoría</h3>
+    <div class="table-responsive mb-4">
+        <table class="table table-striped">
+            <thead><tr><th>Categoría</th><th>Cantidad</th></tr></thead>
+            <tbody>
+                @foreach (var item in vehiculosPorCategoria)
+                {
+                    <tr><td>@item.Nombre</td><td>@item.Cantidad</td></tr>
+                }
+                @if (vehiculosPorCategoria.Count == 0)
+                {
+                    <tr><td colspan="2">Sin registros.</td></tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <h2 class="h4">Alquileres y reservas</h2>
+    <div class="row g-3 mb-3">
+        <div class="col-md-4"><div class="card card-body"><strong>Contratos del período</strong><span class="fs-4">@totalContratos</span></div></div>
+        <div class="col-md-4"><div class="card card-body"><strong>Contratos abiertos</strong><span class="fs-4">@contratosAbiertos</span></div></div>
+        <div class="col-md-4"><div class="card card-body"><strong>Reservas del período</strong><span class="fs-4">@totalReservas</span></div></div>
+    </div>
+    <div class="row g-3 mb-4">
+        <div class="col-md-6">
+            <h3 class="h6">Contratos por estado</h3>
+            <table class="table table-striped">
+                <thead><tr><th>Estado</th><th>Cantidad</th></tr></thead>
+                <tbody>
+                    @foreach (var item in contratosPorEstado)
+                    {
+                        <tr><td>@item.Nombre</td><td>@item.Cantidad</td></tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <div class="col-md-6">
+            <h3 class="h6">Reservas por estado</h3>
+            <table class="table table-striped">
+                <thead><tr><th>Estado</th><th>Cantidad</th></tr></thead>
+                <tbody>
+                    @foreach (var item in reservasPorEstado)
+                    {
+                        <tr><td>@item.Nombre</td><td>@item.Cantidad</td></tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <h2 class="h4">Clientes</h2>
+    <p><strong>Total de clientes registrados:</strong> @totalClientes</p>
+    <h3 class="h6">Clientes con más contratos (histórico)</h3>
+    <div class="table-responsive mb-4">
+        <table class="table table-striped">
+            <thead><tr><th>Cliente</th><th>Contratos</th></tr></thead>
+            <tbody>
+                @foreach (var item in clientesFrecuentes)
+                {
+                    <tr><td>@item.Nombre</td><td>@item.Cantidad</td></tr>
+                }
+                @if (clientesFrecuentes.Count == 0)
+                {
+                    <tr><td colspan="2">Sin contratos registrados.</td></tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <h2 class="h4">Ingresos</h2>
+    <div class="card card-body mb-3">
+        <strong>Total de pagos registrados en el período</strong>
+        <span class="fs-4">RD$ @totalPagos.ToString("N2")</span>
+    </div>
+    <h3 class="h6">Pagos por método</h3>
+    <div class="table-responsive mb-4">
+        <table class="table table-striped">
+            <thead><tr><th>Método</th><th>Operaciones</th><th>Monto</th></tr></thead>
+            <tbody>
+                @foreach (var item in pagosPorMetodo)
+                {
+                    <tr><td>@item.Nombre</td><td>@item.Cantidad</td><td>RD$ @item.Monto.ToString("N2")</td></tr>
+                }
+                @if (pagosPorMetodo.Count == 0)
+                {
+                    <tr><td colspan="3">Sin pagos en el período.</td></tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <h2 class="h4">Mantenimientos</h2>
+    <div class="row g-3 mb-3">
+        <div class="col-md-3"><div class="card card-body"><strong>Total del período</strong><span class="fs-4">@totalMantenimientos</span></div></div>
+        <div class="col-md-3"><div class="card card-body"><strong>En curso</strong><span class="fs-4">@mantenimientosEnCurso</span></div></div>
+        <div class="col-md-3"><div class="card card-body"><strong>Completados</strong><span class="fs-4">@mantenimientosCompletados</span></div></div>
+        <div class="col-md-3"><div class="card card-body"><strong>Costo total</strong><span class="fs-5">RD$ @costoMantenimientos.ToString("N2")</span></div></div>
+    </div>
+    <h3 class="h6">Mantenimientos por vehículo</h3>
+    <div class="table-responsive mb-4">
+        <table class="table table-striped">
+            <thead><tr><th>Vehículo</th><th>Registros</th><th>Costo</th></tr></thead>
+            <tbody>
+                @foreach (var item in mantenimientosPorVehiculo)
+                {
+                    <tr><td>@item.Nombre</td><td>@item.Cantidad</td><td>RD$ @item.Monto.ToString("N2")</td></tr>
+                }
+                @if (mantenimientosPorVehiculo.Count == 0)
+                {
+                    <tr><td colspan="3">Sin mantenimientos en el período.</td></tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private DateTime fechaDesde = new(DateTime.Today.Year, DateTime.Today.Month, 1);
+    private DateTime fechaHasta = DateTime.Today;
+    private bool cargando = true;
+    private string? error;
+
+    private int totalVehiculos, vehiculosActivos, vehiculosMantenimiento, vehiculosFueraServicio;
+    private int totalContratos, contratosAbiertos, totalReservas, totalClientes;
+    private int totalMantenimientos, mantenimientosEnCurso, mantenimientosCompletados;
+    private decimal totalPagos, costoMantenimientos;
+
+    private List<Conteo> vehiculosPorCategoria = new();
+    private List<Conteo> contratosPorEstado = new();
+    private List<Conteo> reservasPorEstado = new();
+    private List<Conteo> clientesFrecuentes = new();
+    private List<ResumenMonto> pagosPorMetodo = new();
+    private List<ResumenMonto> mantenimientosPorVehiculo = new();
+
+    private sealed record Conteo(string Nombre, int Cantidad);
+    private sealed record ResumenMonto(string Nombre, int Cantidad, decimal Monto);
+
+    protected override async Task OnInitializedAsync() => await CargarDatos();
+
+    private async Task CargarDatos()
+    {
+        error = null;
+        cargando = true;
+
+        try
+        {
+            if (fechaHasta.Date < fechaDesde.Date)
+            {
+                error = "La fecha final no puede ser anterior a la inicial.";
+                return;
+            }
+
+            var desde = fechaDesde.Date;
+            var hastaExclusivo = fechaHasta.Date.AddDays(1);
+            var desdeDia = DateOnly.FromDateTime(desde);
+            var hastaDia = DateOnly.FromDateTime(fechaHasta.Date);
+
+            await using var db = await DbFactory.CreateDbContextAsync();
+
+            totalVehiculos = await db.Vehiculo.CountAsync();
+            vehiculosActivos = await db.Vehiculo.CountAsync(v => v.Estado == "activo");
+            vehiculosMantenimiento = await db.Vehiculo.CountAsync(v => v.Estado == "en_mantenimiento");
+            vehiculosFueraServicio = await db.Vehiculo.CountAsync(v => v.Estado == "fuera_de_servicio");
+
+            vehiculosPorCategoria = await db.Vehiculo.AsNoTracking()
+                .GroupBy(v => v.IdCategoriaNavigation.Nombre)
+                .Select(g => new Conteo(g.Key, g.Count()))
+                .OrderBy(x => x.Nombre).ToListAsync();
+
+            var contratos = db.Contrato.AsNoTracking()
+                .Where(c => c.FechaCreacion >= desde && c.FechaCreacion < hastaExclusivo);
+
+            totalContratos = await contratos.CountAsync();
+            contratosAbiertos = await contratos.CountAsync(c => c.Estado == "abierto");
+            contratosPorEstado = await contratos
+                .GroupBy(c => c.Estado)
+                .Select(g => new Conteo(g.Key, g.Count()))
+                .OrderBy(x => x.Nombre).ToListAsync();
+
+            var reservas = db.Reserva.AsNoTracking()
+                .Where(r => r.FechaCreacion >= desde && r.FechaCreacion < hastaExclusivo);
+
+            totalReservas = await reservas.CountAsync();
+            reservasPorEstado = await reservas
+                .GroupBy(r => r.Estado)
+                .Select(g => new Conteo(g.Key, g.Count()))
+                .OrderBy(x => x.Nombre).ToListAsync();
+
+            totalClientes = await db.Cliente.CountAsync();
+            clientesFrecuentes = await db.Contrato.AsNoTracking()
+                .GroupBy(c => new { c.IdCliente, c.IdClienteNavigation.Nombre, c.IdClienteNavigation.Apellido })
+                .Select(g => new Conteo(g.Key.Nombre + " " + g.Key.Apellido, g.Count()))
+                .OrderByDescending(x => x.Cantidad).ThenBy(x => x.Nombre)
+                .Take(10).ToListAsync();
+
+            var pagos = db.Pago.AsNoTracking()
+                .Where(p => p.Fecha >= desde && p.Fecha < hastaExclusivo);
+
+            totalPagos = await pagos.SumAsync(p => (decimal?)p.Monto) ?? 0m;
+            pagosPorMetodo = await pagos
+                .GroupBy(p => p.IdMetodoPagoNavigation.Nombre)
+                .Select(g => new ResumenMonto(g.Key, g.Count(), g.Sum(p => p.Monto)))
+                .OrderByDescending(x => x.Monto).ToListAsync();
+
+            var mantenimientos = db.Mantenimiento.AsNoTracking()
+                .Where(m => m.FechaInicio >= desdeDia && m.FechaInicio <= hastaDia);
+
+            totalMantenimientos = await mantenimientos.CountAsync();
+            mantenimientosEnCurso = await mantenimientos.CountAsync(m => m.Estado == "en_curso");
+            mantenimientosCompletados = await mantenimientos.CountAsync(m => m.Estado == "completado");
+            costoMantenimientos = await mantenimientos.SumAsync(m => (decimal?)m.Costo) ?? 0m;
+
+            mantenimientosPorVehiculo = await mantenimientos
+                .GroupBy(m => new { m.IdVehiculo, m.IdVehiculoNavigation.Matricula })
+                .Select(g => new ResumenMonto(g.Key.Matricula, g.Count(), g.Sum(m => m.Costo)))
+                .OrderByDescending(x => x.Monto).ToListAsync();
+        }
+        catch (Exception)
+        {
+            error = "No se pudieron cargar los reportes. Verifica la conexión y los datos.";
+        }
+        finally
+        {
+            cargando = false;
+        }
+    }
+}

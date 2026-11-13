@@ -1,0 +1,486 @@
+
+@page "/vehiculos"
+
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.Data.SqlClient
+@using AlquilerVehiculos.Data
+@using AlquilerVehiculos.Models
+
+@inject IDbContextFactory<AlquilerDbContext> DbFactory
+@inject IJSRuntime JS
+
+<PageTitle>Vehículos</PageTitle>
+
+<h1>Gestión de vehículos</h1>
+<p>Administra los vehículos registrados en el sistema.</p>
+
+<div class="mb-3">
+    <button class="btn btn-primary"
+            @onclick="NuevoVehiculo"
+            disabled="@guardando">
+        Nuevo vehículo
+    </button>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(mensaje))
+{
+    <div class="alert alert-success">@mensaje</div>
+}
+@if (!string.IsNullOrWhiteSpace(error))
+{
+    <div class="alert alert-danger">@error</div>
+}
+
+@if (cargando)
+{
+    <p>Cargando vehículos...</p>
+}
+else
+{
+    @if (mostrandoFormulario)
+    {
+        <div class="card mb-4">
+            <div class="card-body">
+                <h2 class="h5">
+                    @(esEdicion ? "Editar vehículo" : "Registrar vehículo")
+                </h2>
+
+                <EditForm Model="@formulario" OnValidSubmit="@GuardarVehiculo">
+                    <DataAnnotationsValidator />
+                    <ValidationSummary />
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label" for="matricula">Matrícula</label>
+                            <InputText id="matricula"
+                                       class="form-control"
+                                       @bind-Value="formulario.Matricula" />
+                            <ValidationMessage For="@(() => formulario.Matricula)" />
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label" for="categoria">Categoría</label>
+                            <InputSelect id="categoria"
+                                         class="form-select"
+                                         @bind-Value="formulario.IdCategoria">
+                                <option value="0">-- Selecciona una categoría --</option>
+                                @foreach (var categoria in categorias)
+                                {
+                                    <option value="@categoria.IdCategoria">
+                                        @categoria.Nombre
+                                    </option>
+                                }
+                            </InputSelect>
+                            <ValidationMessage For="@(() => formulario.IdCategoria)" />
+                        </div>
+
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label" for="marca">Marca</label>
+                            <InputText id="marca"
+                                       class="form-control"
+                                       @bind-Value="formulario.Marca" />
+                            <ValidationMessage For="@(() => formulario.Marca)" />
+                        </div>
+
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label" for="modelo">Modelo</label>
+                            <InputText id="modelo"
+                                       class="form-control"
+                                       @bind-Value="formulario.Modelo" />
+                            <ValidationMessage For="@(() => formulario.Modelo)" />
+                        </div>
+
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label" for="anio">Año</label>
+                            <InputNumber id="anio"
+                                         class="form-control"
+                                         @bind-Value="formulario.Anio" />
+                            <ValidationMessage For="@(() => formulario.Anio)" />
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label" for="kilometraje">Kilometraje</label>
+                            <InputNumber id="kilometraje"
+                                         class="form-control"
+                                         @bind-Value="formulario.Kilometraje" />
+                            <ValidationMessage For="@(() => formulario.Kilometraje)" />
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label" for="estado">Estado</label>
+                            
+                          <InputSelect id="estado"
+                            class="form-select"
+                            @bind-Value="formulario.Estado">
+                           <option value="activo">Activo</option>
+                           <option value="fuera_de_servicio">Fuera de servicio</option>
+                         </InputSelect>
+
+                         
+                            <ValidationMessage For="@(() => formulario.Estado)" />
+                        </div>
+
+                        
+                    </div>
+
+                    <button type="submit"
+                            class="btn btn-success me-2"
+                            disabled="@guardando">
+                        @(guardando ? "Guardando..." : "Guardar")
+                    </button>
+
+                    <button type="button"
+                            class="btn btn-secondary"
+                            @onclick="CancelarFormulario"
+                            disabled="@guardando">
+                        Cancelar
+                    </button>
+                </EditForm>
+            </div>
+        </div>
+    }
+
+    @if (vehiculos.Count == 0)
+    {
+        <div class="alert alert-info">No hay vehículos registrados.</div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-striped table-hover align-middle">
+                <thead>
+                    <tr>
+                        <th>Matrícula</th>
+                        <th>Marca</th>
+                        <th>Modelo</th>
+                        <th>Año</th>
+                        <th>Kilometraje</th>
+                        <th>Categoría</th>
+                        <th>Estado</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var vehiculo in vehiculos)
+                    {
+                        <tr @key="vehiculo.IdVehiculo">
+                            <td>@vehiculo.Matricula</td>
+                            <td>@vehiculo.Marca</td>
+                            <td>@vehiculo.Modelo</td>
+                            <td>@vehiculo.Anio</td>
+                            <td>@vehiculo.Kilometraje.ToString("N0")</td>
+                            <td>@vehiculo.IdCategoriaNavigation.Nombre</td>
+                            <td>@(vehiculo.Estado == "en_mantenimiento" ? "En mantenimiento" :vehiculo.Estado == "fuera_de_servicio" ? "Fuera de servicio" :"Activo")</td>
+                            <td class="text-nowrap">
+                                <button class="btn btn-sm btn-warning me-1"
+                                        @onclick="() => EditarVehiculo(vehiculo.IdVehiculo)"
+                                        disabled="@guardando">
+                                    Editar
+                                </button>
+                                <button class="btn btn-sm btn-danger"
+                                        @onclick="() => EliminarVehiculo(vehiculo.IdVehiculo)"
+                                        disabled="@guardando">
+                                    Eliminar
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+}
+
+@code {
+    private List<Vehiculo> vehiculos = new();
+    private List<Categoria> categorias = new();
+    private FormularioVehiculo formulario = new();
+    public string Estado { get; set; } = "activo";
+
+    private bool cargando = true;
+    private bool guardando;
+    private bool mostrandoFormulario;
+    private bool esEdicion;
+    private int? idVehiculoEdicion;
+
+    private string? mensaje;
+    private string? error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarDatos();
+    }
+
+    private async Task CargarDatos()
+    {
+        cargando = true;
+        error = null;
+
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+
+            categorias = await db.Categoria
+                .AsNoTracking()
+                .OrderBy(c => c.Nombre)
+                .ToListAsync();
+
+            vehiculos = await db.Vehiculo
+                .AsNoTracking()
+                .Include(v => v.IdCategoriaNavigation)
+                .OrderBy(v => v.Matricula)
+                .ToListAsync();
+        }
+        catch (Exception)
+        {
+            error = "No se pudieron cargar los datos. Verifica la conexión con SQL Server.";
+        }
+        finally
+        {
+            cargando = false;
+        }
+    }
+
+    private void NuevoVehiculo()
+    {
+        error = null;
+        mensaje = null;
+
+        formulario = new FormularioVehiculo();
+        idVehiculoEdicion = null;
+        esEdicion = false;
+        mostrandoFormulario = true;
+    }
+
+    private async Task EditarVehiculo(int id)
+    {
+        error = null;
+        mensaje = null;
+
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+
+            var vehiculo = await db.Vehiculo
+                .AsNoTracking()
+                .FirstOrDefaultAsync(v => v.IdVehiculo == id);
+
+            if (vehiculo is null)
+            {
+                error = "El vehículo ya no existe.";
+                await CargarDatos();
+                return;
+            }
+
+            formulario = new FormularioVehiculo
+            {
+                IdCategoria = vehiculo.IdCategoria,
+                Matricula = vehiculo.Matricula,
+                Marca = vehiculo.Marca,
+                Modelo = vehiculo.Modelo,
+                Anio = vehiculo.Anio,
+                Kilometraje = vehiculo.Kilometraje,
+                Estado = vehiculo.Estado
+            };
+
+            idVehiculoEdicion = id;
+            esEdicion = true;
+            mostrandoFormulario = true;
+        }
+        catch (Exception)
+        {
+            error = "No se pudo cargar el vehículo para editar.";
+        }
+    }
+
+    private async Task GuardarVehiculo()
+    {
+        if (guardando)
+            return;
+
+        guardando = true;
+        error = null;
+        mensaje = null;
+
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+
+            bool categoriaExiste = await db.Categoria
+                .AnyAsync(c => c.IdCategoria == formulario.IdCategoria);
+
+            if (!categoriaExiste)
+            {
+                error = "Selecciona una categoría existente.";
+                return;
+            }
+
+            string matricula = formulario.Matricula.Trim();
+
+            bool matriculaDuplicada = await db.Vehiculo.AnyAsync(v =>
+                v.Matricula == matricula &&
+                (!esEdicion || v.IdVehiculo != idVehiculoEdicion));
+
+            if (matriculaDuplicada)
+            {
+                error = "Ya existe un vehículo con esa matrícula.";
+                return;
+            }
+
+            if (esEdicion && idVehiculoEdicion.HasValue)
+            {
+                var vehiculo = await db.Vehiculo
+                    .FirstOrDefaultAsync(v => v.IdVehiculo == idVehiculoEdicion.Value);
+
+                if (vehiculo is null)
+                {
+                    error = "El vehículo que intentas editar ya no existe.";
+                    return;
+                }
+
+                vehiculo.IdCategoria = formulario.IdCategoria;
+                vehiculo.Matricula = matricula;
+                vehiculo.Marca = formulario.Marca.Trim();
+                vehiculo.Modelo = formulario.Modelo.Trim();
+                vehiculo.Anio = (short)formulario.Anio;
+                vehiculo.Kilometraje = formulario.Kilometraje;
+
+
+                bool tieneMantenimientoEnCurso = await db.Mantenimiento
+                   .AnyAsync(m => m.IdVehiculo == vehiculo.IdVehiculo
+                                             && m.Estado == "en_curso");
+
+                if (tieneMantenimientoEnCurso && formulario.Estado == "activo")
+                   {
+                     error = "No puedes activar este vehículo porque tiene un mantenimiento en curso. Finaliza el mantenimiento primero.";
+                     return;
+                   }
+
+                vehiculo.Estado = formulario.Estado;
+                
+                await db.SaveChangesAsync();
+                mensaje = "Vehículo actualizado correctamente.";
+            }
+            else
+            {
+                var vehiculo = new Vehiculo
+                {
+                    IdCategoria = formulario.IdCategoria,
+                    Matricula = matricula,
+                    Marca = formulario.Marca.Trim(),
+                    Modelo = formulario.Modelo.Trim(),
+                    Anio = (short)formulario.Anio,
+                    Kilometraje = formulario.Kilometraje,
+                    Estado = formulario.Estado
+                };
+
+                db.Vehiculo.Add(vehiculo);
+                await db.SaveChangesAsync();
+                mensaje = "Vehículo registrado correctamente.";
+            }
+
+            mostrandoFormulario = false;
+            await CargarDatos();
+        }
+        catch (DbUpdateException)
+        {
+            error = "No se pudo guardar el vehículo. Verifica que la matrícula sea única y que los datos sean válidos.";
+        }
+        catch (Exception)
+        {
+            error = "Ocurrió un error al guardar el vehículo.";
+        }
+        finally
+        {
+            guardando = false;
+        }
+    }
+
+    private async Task EliminarVehiculo(int id)
+    {
+        error = null;
+        mensaje = null;
+
+        bool confirmar = await JS.InvokeAsync<bool>(
+            "confirm",
+            "¿Estás seguro de que deseas eliminar este vehículo? Si tiene contratos, reservas o mantenimientos relacionados, la base de datos podría impedirlo.");
+
+        if (!confirmar || guardando)
+            return;
+
+        guardando = true;
+
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+
+            var vehiculo = await db.Vehiculo
+                .FirstOrDefaultAsync(v => v.IdVehiculo == id);
+
+            if (vehiculo is null)
+            {
+                error = "El vehículo ya no existe.";
+                await CargarDatos();
+                return;
+            }
+
+            db.Vehiculo.Remove(vehiculo);
+            await db.SaveChangesAsync();
+
+            if (idVehiculoEdicion == id)
+                CancelarFormulario();
+
+            mensaje = "Vehículo eliminado correctamente.";
+            await CargarDatos();
+        }
+        catch (DbUpdateException)
+        {
+            error = "No se puede eliminar este vehículo porque está relacionado con reservas, contratos o mantenimientos.";
+        }
+        catch (Exception)
+        {
+            error = "Ocurrió un error al eliminar el vehículo.";
+        }
+        finally
+        {
+            guardando = false;
+        }
+    }
+
+    private void CancelarFormulario()
+    {
+        mostrandoFormulario = false;
+        formulario = new FormularioVehiculo();
+        idVehiculoEdicion = null;
+        esEdicion = false;
+    }
+
+    private sealed class FormularioVehiculo
+    {
+        [Required(ErrorMessage = "La matrícula es obligatoria.")]
+        [StringLength(15, ErrorMessage = "La matrícula no puede superar 15 caracteres.")]
+        public string Matricula { get; set; } = string.Empty;
+
+        [Range(1, int.MaxValue, ErrorMessage = "Selecciona una categoría.")]
+        public int IdCategoria { get; set; }
+
+        [Required(ErrorMessage = "La marca es obligatoria.")]
+        [StringLength(40, ErrorMessage = "La marca no puede superar 40 caracteres.")]
+        public string Marca { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "El modelo es obligatorio.")]
+        [StringLength(40, ErrorMessage = "El modelo no puede superar 40 caracteres.")]
+        public string Modelo { get; set; } = string.Empty;
+
+        [Range(1900, 32767, ErrorMessage = "Introduce un año válido.")]
+        public int Anio { get; set; } = DateTime.Now.Year;
+
+        [Range(0, int.MaxValue, ErrorMessage = "El kilometraje no puede ser negativo.")]
+        public int Kilometraje { get; set; }
+
+        [Required(ErrorMessage = "Selecciona un estado.")]
+        [StringLength(20)]
+        public string Estado { get; set; } = "activo";
+    }
+}

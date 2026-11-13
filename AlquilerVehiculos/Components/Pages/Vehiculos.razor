@@ -1,5 +1,6 @@
 
 @page "/vehiculos"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
 
 @using System.ComponentModel.DataAnnotations
 @using Microsoft.EntityFrameworkCore
@@ -12,16 +13,18 @@
 
 <PageTitle>Vehículos</PageTitle>
 
-<h1>Gestión de vehículos</h1>
-<p>Administra los vehículos registrados en el sistema.</p>
-
-<div class="mb-3">
-    <button class="btn btn-primary"
-            @onclick="NuevoVehiculo"
-            disabled="@guardando">
-        Nuevo vehículo
-    </button>
-</div>
+<div class="container-fluid py-4">
+    <div class="mb-4">
+        <h1 class="h3 fw-bold mb-1">
+            <i class="bi bi-car-front-fill text-primary me-2"></i>Gestión de vehículos
+        </h1>
+        <p class="text-secondary mb-0">Administra los vehículos registrados en el sistema.</p>
+    </div>
+    <div class="mb-4">
+        <button class="btn btn-primary px-4" @onclick="NuevoVehiculo" disabled="@guardando">
+            <i class="bi bi-plus-circle me-2"></i>Nuevo vehículo
+        </button>
+    </div>
 
 @if (!string.IsNullOrWhiteSpace(mensaje))
 {
@@ -40,11 +43,12 @@ else
 {
     @if (mostrandoFormulario)
     {
-        <div class="card mb-4">
-            <div class="card-body">
-                <h2 class="h5">
-                    @(esEdicion ? "Editar vehículo" : "Registrar vehículo")
-                </h2>
+        <div class="card border-0 shadow-sm rounded-3 mb-4">
+            <div class="card-header bg-white border-0 px-4 pt-4">
+                <h2 class="h5 fw-bold mb-1"><i class="bi bi-pencil-square text-primary me-2"></i>@(esEdicion ? "Editar" : "Registrar") vehículo</h2>
+                <p class="text-secondary small mb-0">Complete los datos solicitados.</p>
+            </div>
+            <div class="card-body p-4">
 
                 <EditForm Model="@formulario" OnValidSubmit="@GuardarVehiculo">
                     <DataAnnotationsValidator />
@@ -52,7 +56,7 @@ else
 
                     <div class="row">
                         <div class="col-md-6 mb-3">
-                            <label class="form-label" for="matricula">Matrícula</label>
+                            <label class="form-label fw-semibold" for="matricula">Matrícula</label>
                             <InputText id="matricula"
                                        class="form-control"
                                        @bind-Value="formulario.Matricula" />
@@ -60,7 +64,7 @@ else
                         </div>
 
                         <div class="col-md-6 mb-3">
-                            <label class="form-label" for="categoria">Categoría</label>
+                            <label class="form-label fw-semibold" for="categoria">Categoría</label>
                             <InputSelect id="categoria"
                                          class="form-select"
                                          @bind-Value="formulario.IdCategoria">
@@ -76,7 +80,7 @@ else
                         </div>
 
                         <div class="col-md-4 mb-3">
-                            <label class="form-label" for="marca">Marca</label>
+                            <label class="form-label fw-semibold" for="marca">Marca</label>
                             <InputText id="marca"
                                        class="form-control"
                                        @bind-Value="formulario.Marca" />
@@ -84,7 +88,7 @@ else
                         </div>
 
                         <div class="col-md-4 mb-3">
-                            <label class="form-label" for="modelo">Modelo</label>
+                            <label class="form-label fw-semibold" for="modelo">Modelo</label>
                             <InputText id="modelo"
                                        class="form-control"
                                        @bind-Value="formulario.Modelo" />
@@ -92,7 +96,7 @@ else
                         </div>
 
                         <div class="col-md-4 mb-3">
-                            <label class="form-label" for="anio">Año</label>
+                            <label class="form-label fw-semibold" for="anio">Año</label>
                             <InputNumber id="anio"
                                          class="form-control"
                                          @bind-Value="formulario.Anio" />
@@ -100,7 +104,7 @@ else
                         </div>
 
                         <div class="col-md-6 mb-3">
-                            <label class="form-label" for="kilometraje">Kilometraje</label>
+                            <label class="form-label fw-semibold" for="kilometraje">Kilometraje</label>
                             <InputNumber id="kilometraje"
                                          class="form-control"
                                          @bind-Value="formulario.Kilometraje" />
@@ -108,13 +112,12 @@ else
                         </div>
 
                         <div class="col-md-6 mb-3">
-                            <label class="form-label" for="estado">Estado</label>
+                            <label class="form-label fw-semibold" for="estado">Estado</label>
                             
                           <InputSelect id="estado"
                             class="form-select"
                             @bind-Value="formulario.Estado">
                            <option value="activo">Activo</option>
-                           <option value="en_mantenimiento">En mantenimiento</option>
                            <option value="fuera_de_servicio">Fuera de servicio</option>
                          </InputSelect>
 
@@ -126,13 +129,13 @@ else
                     </div>
 
                     <button type="submit"
-                            class="btn btn-success me-2"
+                            class="btn btn-primary px-4 me-2"
                             disabled="@guardando">
                         @(guardando ? "Guardando..." : "Guardar")
                     </button>
 
                     <button type="button"
-                            class="btn btn-secondary"
+                            class="btn btn-outline-secondary"
                             @onclick="CancelarFormulario"
                             disabled="@guardando">
                         Cancelar
@@ -142,17 +145,29 @@ else
         </div>
     }
 
+    <div class="card border-0 shadow-sm rounded-3 mb-4">
+        <div class="card-header bg-white border-0 p-4">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div>
+                    <h2 class="h5 fw-bold mb-1"><i class="bi bi-card-list text-primary me-2"></i>Vehículos registrados</h2>
+                    <p class="text-secondary small mb-0">Listado de vehículos del sistema.</p>
+                </div>
+                <span class="badge bg-primary-subtle text-primary rounded-pill px-3 py-2">
+                    Total: @vehiculos.Count
+                </span>
+            </div>
+        </div>
+        <div class="card-body p-0">
     @if (vehiculos.Count == 0)
     {
-        <div class="alert alert-info">No hay vehículos registrados.</div>
+        <div class="alert alert-info m-3">No hay vehículos registrados.</div>
     }
     else
     {
         <div class="table-responsive">
-            <table class="table table-striped table-hover align-middle">
-                <thead>
+            <table class="table table-hover table-striped align-middle mb-0">
+                <thead class="table-light">
                     <tr>
-                        <th>ID</th>
                         <th>Matrícula</th>
                         <th>Marca</th>
                         <th>Modelo</th>
@@ -167,7 +182,6 @@ else
                     @foreach (var vehiculo in vehiculos)
                     {
                         <tr @key="vehiculo.IdVehiculo">
-                            <td>@vehiculo.IdVehiculo</td>
                             <td>@vehiculo.Matricula</td>
                             <td>@vehiculo.Marca</td>
                             <td>@vehiculo.Modelo</td>
@@ -176,12 +190,12 @@ else
                             <td>@vehiculo.IdCategoriaNavigation.Nombre</td>
                             <td>@(vehiculo.Estado == "en_mantenimiento" ? "En mantenimiento" :vehiculo.Estado == "fuera_de_servicio" ? "Fuera de servicio" :"Activo")</td>
                             <td class="text-nowrap">
-                                <button class="btn btn-sm btn-warning me-1"
+                                <button class="btn btn-sm btn-outline-primary me-1"
                                         @onclick="() => EditarVehiculo(vehiculo.IdVehiculo)"
                                         disabled="@guardando">
                                     Editar
                                 </button>
-                                <button class="btn btn-sm btn-danger"
+                                <button class="btn btn-sm btn-outline-danger"
                                         @onclick="() => EliminarVehiculo(vehiculo.IdVehiculo)"
                                         disabled="@guardando">
                                     Eliminar
@@ -193,7 +207,10 @@ else
             </table>
         </div>
     }
+    </div>
+</div>
 }
+</div>
 
 @code {
     private List<Vehiculo> vehiculos = new();
@@ -348,6 +365,18 @@ else
                 vehiculo.Modelo = formulario.Modelo.Trim();
                 vehiculo.Anio = (short)formulario.Anio;
                 vehiculo.Kilometraje = formulario.Kilometraje;
+
+
+                bool tieneMantenimientoEnCurso = await db.Mantenimiento
+                   .AnyAsync(m => m.IdVehiculo == vehiculo.IdVehiculo
+                                             && m.Estado == "en_curso");
+
+                if (tieneMantenimientoEnCurso && formulario.Estado == "activo")
+                   {
+                     error = "No puedes activar este vehículo porque tiene un mantenimiento en curso. Finaliza el mantenimiento primero.";
+                     return;
+                   }
+
                 vehiculo.Estado = formulario.Estado;
                 
                 await db.SaveChangesAsync();

@@ -1,0 +1,387 @@
+@page "/usuarios"
+@rendermode InteractiveServer
+@attribute [Authorize(Roles = "Administrador")]
+
+@using System.ComponentModel.DataAnnotations
+@using System.Security.Claims
+@using AlquilerVehiculos.Data
+@using AlquilerVehiculos.Models
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
+
+@inject IDbContextFactory<AlquilerDbContext> DbFactory
+@inject IPasswordHasher<Usuario> PasswordHasher
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<PageTitle>Gestión de usuarios</PageTitle>
+
+<div class="container-fluid py-4">
+    <div class="mb-4">
+        <h1 class="h3 fw-bold mb-1"><i class="bi bi-person-gear text-primary me-2"></i>Gestión de usuarios</h1>
+        <p class="text-secondary mb-0">Administra las cuentas y los permisos de acceso al sistema.</p>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(mensaje))
+    {
+        <div class="alert alert-success shadow-sm border-0" role="status"><i class="bi bi-check-circle-fill me-2"></i>@mensaje</div>
+    }
+    @if (!string.IsNullOrWhiteSpace(error))
+    {
+        <div class="alert alert-danger shadow-sm border-0" role="alert"><i class="bi bi-exclamation-triangle-fill me-2"></i>@error</div>
+    }
+
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+        <button class="btn btn-primary px-4" @onclick="NuevoUsuario" disabled="@guardando">
+            <i class="bi bi-person-plus-fill me-2"></i>Nuevo usuario
+        </button>
+        <span class="text-secondary small">Las cuentas se desactivan; no se eliminan.</span>
+    </div>
+
+    @if (mostrarFormulario)
+    {
+        <div class="card border-0 shadow-sm rounded-3 mb-4">
+            <div class="card-header bg-white border-0 px-4 pt-4">
+                <h2 class="h5 fw-bold mb-1"><i class="bi bi-pencil-square text-primary me-2"></i>@(editandoId.HasValue ? "Editar usuario" : "Registrar usuario")</h2>
+                <p class="small text-secondary mb-0">Al editar, deja la contraseña vacía para conservar la actual.</p>
+            </div>
+            <div class="card-body p-4">
+                <EditForm Model="@formulario" OnValidSubmit="GuardarUsuario" FormName="gestionUsuarios">
+                    <DataAnnotationsValidator />
+                    <div class="row g-3">
+                        <div class="col-12 col-md-6">
+                            <label class="form-label fw-semibold" for="nombreCompleto">Nombre completo</label>
+                            <InputText id="nombreCompleto" class="form-control" maxlength="100" @bind-Value="formulario.NombreCompleto" />
+                            <ValidationMessage For="@(() => formulario.NombreCompleto)" class="text-danger small" />
+                        </div>
+                        <div class="col-12 col-md-6">
+                            <label class="form-label fw-semibold" for="nombreUsuario">Nombre de usuario</label>
+                            <InputText id="nombreUsuario" class="form-control" maxlength="50" autocomplete="off" @bind-Value="formulario.NombreUsuario" />
+                            <ValidationMessage For="@(() => formulario.NombreUsuario)" class="text-danger small" />
+                        </div>
+                        <div class="col-12 col-md-6">
+                            <label class="form-label fw-semibold" for="rolUsuario">Rol</label>
+                            <InputSelect id="rolUsuario" class="form-select" @bind-Value="formulario.IdRol">
+                                <option value="0">Seleccione un rol</option>
+                                @foreach (var rol in roles)
+                                {
+                                    <option value="@rol.IdRol">@rol.Nombre</option>
+                                }
+                            </InputSelect>
+                            <ValidationMessage For="@(() => formulario.IdRol)" class="text-danger small" />
+                        </div>
+                        <div class="col-12 col-md-6">
+                            <label class="form-label fw-semibold" for="claveUsuario">@(editandoId.HasValue ? "Nueva contraseña (opcional)" : "Contraseña")</label>
+                            <InputText id="claveUsuario" type="password" class="form-control" autocomplete="new-password" @bind-Value="formulario.Contrasena" />
+                            <span class="form-text">Mínimo 12 caracteres si estableces una contraseña.</span>
+                        </div>
+                        <div class="col-12">
+                            <div class="form-check">
+                                <InputCheckbox id="activoUsuario" class="form-check-input" @bind-Value="formulario.Activo" />
+                                <label class="form-check-label" for="activoUsuario">Cuenta activa</label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-4 d-flex gap-2">
+                        <button class="btn btn-primary px-4" type="submit" disabled="@guardando">
+                            <i class="bi bi-floppy me-2"></i>@(guardando ? "Guardando..." : "Guardar usuario")
+                        </button>
+                        <button class="btn btn-outline-secondary" type="button" @onclick="Cancelar" disabled="@guardando">Cancelar</button>
+                    </div>
+                </EditForm>
+            </div>
+        </div>
+    }
+
+    <div class="card border-0 shadow-sm rounded-3">
+        <div class="card-header bg-white border-0 p-4">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+                <div>
+                    <h2 class="h5 fw-bold mb-1"><i class="bi bi-people-fill text-primary me-2"></i>Usuarios registrados</h2>
+                    <p class="text-secondary small mb-0">Consulta, modifica o cambia el estado de las cuentas.</p>
+                </div>
+                <span class="badge bg-primary-subtle text-primary rounded-pill px-3 py-2">Total: @usuarios.Count</span>
+            </div>
+            <div class="mt-3">
+                <input class="form-control" style="max-width: 380px" placeholder="Buscar por nombre o usuario..." aria-label="Buscar usuarios" @bind="busqueda" @bind:event="oninput" />
+            </div>
+        </div>
+        <div class="card-body p-0">
+            @if (cargando)
+            {
+                <p class="p-4 text-secondary">Cargando usuarios...</p>
+            }
+            else if (!UsuariosFiltrados.Any())
+            {
+                <p class="p-4 text-secondary">No hay usuarios que coincidan con la búsqueda.</p>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="ps-4">Usuario</th>
+                                <th>Nombre completo</th>
+                                <th>Rol</th>
+                                <th>Estado</th>
+                                <th>Fecha de creación</th>
+                                <th class="text-end pe-4">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var usuario in UsuariosFiltrados)
+                            {
+                                <tr>
+                                    <td class="ps-4 fw-semibold">@usuario.NombreUsuario</td>
+                                    <td>@usuario.NombreCompleto</td>
+                                    <td><span class="badge @(usuario.IdRolNavigation.Nombre == "Administrador" ? "bg-primary-subtle text-primary" : "bg-secondary-subtle text-secondary")">@usuario.IdRolNavigation.Nombre</span></td>
+                                    <td><span class="badge @(usuario.Activo ? "bg-success-subtle text-success" : "bg-danger-subtle text-danger")">@(usuario.Activo ? "Activo" : "Inactivo")</span></td>
+                                    <td>@usuario.FechaCreacion.ToString("dd/MM/yyyy")</td>
+                                    <td class="text-end pe-4">
+                                        <div class="d-flex gap-2 justify-content-end flex-wrap">
+                                            <button class="btn btn-sm btn-outline-primary" @onclick="() => EditarUsuario(usuario.IdUsuario)" disabled="@guardando">
+                                                <i class="bi bi-pencil-square me-1"></i>Editar
+                                            </button>
+                                            <button class="btn btn-sm @(usuario.Activo ? "btn-outline-danger" : "btn-outline-success")" @onclick="() => SolicitarCambioEstado(usuario.IdUsuario)" disabled="@guardando">
+                                                <i class="bi @(usuario.Activo ? "bi-person-x" : "bi-person-check") me-1"></i>@(usuario.Activo ? "Desactivar" : "Activar")
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+
+    @if (usuarioPorCambiar is not null)
+    {
+        <div class="card border-warning shadow-sm mt-4">
+            <div class="card-body d-flex align-items-center justify-content-between flex-wrap gap-3">
+                <div>
+                    <strong>Confirmar cambio de estado</strong>
+                    <p class="mb-0 text-secondary">¿Deseas @(usuarioPorCambiar.Activo ? "desactivar" : "activar") a <strong>@usuarioPorCambiar.NombreUsuario</strong>?</p>
+                </div>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-outline-secondary" @onclick="() => usuarioPorCambiar = null" disabled="@guardando">Cancelar</button>
+                    <button class="btn btn-primary" @onclick="ConfirmarCambioEstado" disabled="@guardando">Confirmar</button>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private List<Usuario> usuarios = new();
+    private List<Rol> roles = new();
+    private FormularioUsuario formulario = new();
+    private int? editandoId;
+    private Usuario? usuarioPorCambiar;
+    private bool mostrarFormulario;
+    private bool cargando = true;
+    private bool guardando;
+    private string mensaje = "";
+    private string error = "";
+    private string busqueda = "";
+    private int idActual;
+
+    private IEnumerable<Usuario> UsuariosFiltrados => usuarios.Where(u =>
+        string.IsNullOrWhiteSpace(busqueda) ||
+        u.NombreUsuario.Contains(busqueda.Trim(), StringComparison.OrdinalIgnoreCase) ||
+        u.NombreCompleto.Contains(busqueda.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        int.TryParse(state.User.FindFirstValue(ClaimTypes.NameIdentifier), out idActual);
+        await CargarDatos();
+    }
+
+    private async Task CargarDatos()
+    {
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            roles = await db.Rol.AsNoTracking()
+                .Where(r => r.Nombre == "Administrador" || r.Nombre == "Empleado")
+                .OrderBy(r => r.Nombre).ToListAsync();
+            usuarios = await db.Usuario.AsNoTracking().Include(u => u.IdRolNavigation)
+                .OrderBy(u => u.NombreUsuario).ToListAsync();
+        }
+        catch (Exception)
+        {
+            error = "No se pudieron cargar los usuarios. Revisa la conexión con la base de datos.";
+        }
+        finally { cargando = false; }
+    }
+
+    private void NuevoUsuario()
+    {
+        mensaje = ""; error = "";
+        editandoId = null;
+        formulario = new FormularioUsuario { Activo = true };
+        mostrarFormulario = true;
+        usuarioPorCambiar = null;
+    }
+
+    private void EditarUsuario(int id)
+    {
+        var u = usuarios.FirstOrDefault(x => x.IdUsuario == id);
+        if (u is null) return;
+        mensaje = ""; error = "";
+        editandoId = id;
+        formulario = new FormularioUsuario
+        {
+            NombreCompleto = u.NombreCompleto,
+            NombreUsuario = u.NombreUsuario,
+            IdRol = u.IdRol,
+            Activo = u.Activo,
+            Contrasena = ""
+        };
+        mostrarFormulario = true;
+        usuarioPorCambiar = null;
+    }
+
+    private void Cancelar()
+    {
+        mostrarFormulario = false;
+        editandoId = null;
+        formulario = new();
+        error = "";
+    }
+
+    private async Task GuardarUsuario()
+    {
+        if (guardando) return;
+        guardando = true;
+        mensaje = ""; error = "";
+        try
+        {
+            var nombre = formulario.NombreUsuario.Trim();
+            var completo = formulario.NombreCompleto.Trim();
+            if (nombre.Length == 0 || completo.Length == 0) { error = "Completa los nombres requeridos."; return; }
+            if (string.IsNullOrEmpty(formulario.Contrasena) && !editandoId.HasValue)
+            { error = "La contraseña es obligatoria para nuevos usuarios."; return; }
+            if (!string.IsNullOrEmpty(formulario.Contrasena) && formulario.Contrasena.Length < 12)
+            { error = "La contraseña debe contener al menos 12 caracteres."; return; }
+
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var rol = await db.Rol.FirstOrDefaultAsync(r => r.IdRol == formulario.IdRol &&
+                (r.Nombre == "Administrador" || r.Nombre == "Empleado"));
+            if (rol is null) { error = "Selecciona un rol válido (Administrador o Empleado)."; return; }
+
+            var existe = await db.Usuario.AnyAsync(u => u.NombreUsuario == nombre &&
+                (!editandoId.HasValue || u.IdUsuario != editandoId.Value));
+            if (existe) { error = "Ese nombre de usuario ya está registrado."; return; }
+
+            Usuario usuario;
+            if (editandoId.HasValue)
+            {
+                usuario = await db.Usuario.Include(u => u.IdRolNavigation).FirstOrDefaultAsync(u => u.IdUsuario == editandoId.Value)
+                    ?? throw new InvalidOperationException("El usuario ya no existe.");
+
+                if (usuario.IdUsuario == idActual && (!formulario.Activo || usuario.IdRol != rol.IdRol))
+                { error = "No puedes desactivar tu propia cuenta ni cambiar tu propio rol."; return; }
+
+                if (usuario.Activo && usuario.IdRolNavigation.Nombre == "Administrador" &&
+                    (!formulario.Activo || rol.Nombre != "Administrador") &&
+                    !await HayOtroAdministradorActivo(db, usuario.IdUsuario))
+                { error = "Debe permanecer al menos un administrador activo."; return; }
+
+                usuario.NombreUsuario = nombre;
+                usuario.NombreCompleto = completo;
+                usuario.IdRol = rol.IdRol;
+                usuario.Activo = formulario.Activo;
+            }
+            else
+            {
+                usuario = new Usuario
+                {
+                    NombreUsuario = nombre,
+                    NombreCompleto = completo,
+                    IdRol = rol.IdRol,
+                    Activo = formulario.Activo,
+                    FechaCreacion = DateTime.Now
+                };
+                db.Usuario.Add(usuario);
+            }
+
+            if (!string.IsNullOrEmpty(formulario.Contrasena))
+                usuario.ContrasenaHash = PasswordHasher.HashPassword(usuario, formulario.Contrasena);
+
+            await db.SaveChangesAsync();
+            formulario = new();
+            mostrarFormulario = false;
+            editandoId = null;
+            mensaje = "Usuario guardado correctamente.";
+            await CargarDatos();
+        }
+        catch (DbUpdateException)
+        {
+            error = "No se pudo guardar. Comprueba que el nombre de usuario no esté duplicado.";
+        }
+        catch (Exception)
+        {
+            error = "Ocurrió un error al guardar el usuario.";
+        }
+        finally { guardando = false; }
+    }
+
+    private void SolicitarCambioEstado(int id)
+    {
+        mensaje = ""; error = "";
+        usuarioPorCambiar = usuarios.FirstOrDefault(u => u.IdUsuario == id);
+    }
+
+    private async Task ConfirmarCambioEstado()
+    {
+        if (usuarioPorCambiar is null || guardando) return;
+        guardando = true;
+        mensaje = ""; error = "";
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var usuario = await db.Usuario.Include(u => u.IdRolNavigation)
+                .FirstOrDefaultAsync(u => u.IdUsuario == usuarioPorCambiar.IdUsuario);
+            if (usuario is null) { error = "El usuario ya no existe."; return; }
+            if (usuario.IdUsuario == idActual && usuario.Activo)
+            { error = "No puedes desactivar tu propia cuenta."; return; }
+            if (usuario.Activo && usuario.IdRolNavigation.Nombre == "Administrador" &&
+                !await HayOtroAdministradorActivo(db, usuario.IdUsuario))
+            { error = "No puedes desactivar al último administrador activo."; return; }
+
+            usuario.Activo = !usuario.Activo;
+            await db.SaveChangesAsync();
+            mensaje = usuario.Activo ? "Usuario activado correctamente." : "Usuario desactivado correctamente.";
+            await CargarDatos();
+        }
+        catch (Exception)
+        {
+            error = "No se pudo modificar el estado del usuario.";
+        }
+        finally { usuarioPorCambiar = null; guardando = false; }
+    }
+
+    private static async Task<bool> HayOtroAdministradorActivo(AlquilerDbContext db, int idExcluir) =>
+        await db.Usuario.AnyAsync(u => u.Activo && u.IdUsuario != idExcluir && u.IdRolNavigation.Nombre == "Administrador");
+
+    private sealed class FormularioUsuario
+    {
+        [Required(ErrorMessage = "El nombre completo es obligatorio.")]
+        [StringLength(100, ErrorMessage = "Máximo 100 caracteres.")]
+        public string NombreCompleto { get; set; } = "";
+
+        [Required(ErrorMessage = "El nombre de usuario es obligatorio.")]
+        [StringLength(50, ErrorMessage = "Máximo 50 caracteres.")]
+        public string NombreUsuario { get; set; } = "";
+
+        [Range(1, int.MaxValue, ErrorMessage = "Selecciona un rol.")]
+        public int IdRol { get; set; }
+        public string Contrasena { get; set; } = "";
+        public bool Activo { get; set; } = true;
+    }
+}
