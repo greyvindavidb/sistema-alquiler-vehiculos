@@ -1,6 +1,8 @@
+
 using AlquilerVehiculos.Components;
 using Microsoft.EntityFrameworkCore;
 using AlquilerVehiculos.Data;
+using AlquilerVehiculos.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -8,8 +10,10 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
-   builder.Services.AddDbContextFactory<AlquilerDbContext>(options =>
+builder.Services.AddDbContextFactory<AlquilerDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("AlquilerDb")));
+
+builder.Services.AddScoped<MultaService>();
 
 var app = builder.Build();
 
