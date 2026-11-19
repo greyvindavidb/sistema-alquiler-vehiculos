@@ -1,0 +1,131 @@
+
+@page "/multas"
+@rendermode InteractiveServer
+
+@using Microsoft.EntityFrameworkCore
+@using AlquilerVehiculos.Models
+@using AlquilerVehiculos.Data
+
+@inject IDbContextFactory<AlquilerDbContext> DbFactory
+
+<PageTitle>Gestión de multas</PageTitle>
+
+<h1>Gestión de multas</h1>
+<p>Consulta de multas generadas por retrasos en la devolución de vehículos.</p>
+
+@if (!string.IsNullOrWhiteSpace(error))
+{
+    <div class="alert alert-danger">@error</div>
+}
+
+@if (cargando)
+{
+    <p>Cargando información...</p>
+}
+else
+{
+    <div class="card mb-4">
+        <div class="card-body">
+            <h5>Resumen de multas</h5>
+
+            <p>Multas registradas: @multas.Count</p>
+
+            <p>
+                Total acumulado:
+                <strong>RD$ @totalMultas.ToString("N2")</strong>
+            </p>
+        </div>
+    </div>
+
+    <h5>Multas registradas</h5>
+
+    @if (multas.Count == 0)
+    {
+        <div class="alert alert-info">
+            Todavía no hay multas por retraso registradas.
+        </div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-striped table-hover">
+                <thead>
+                    <tr>
+                        <th>ID cargo</th>
+                        <th>N.º contrato</th>
+                        <th>Cliente</th>
+                        <th>Vehículo</th>
+                        <th>Descripción</th>
+                        <th>Monto</th>
+                        <th>Fecha</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var multa in multas)
+                    {
+                        <tr @key="multa.IdCargo">
+                            <td>@multa.IdCargo</td>
+                            <td>#@multa.IdContrato</td>
+                            <td>
+                                @multa.IdContratoNavigation.IdClienteNavigation.Nombre
+                                @multa.IdContratoNavigation.IdClienteNavigation.Apellido
+                            </td>
+                            <td>
+                                @multa.IdContratoNavigation.IdVehiculoNavigation.Marca
+                                @multa.IdContratoNavigation.IdVehiculoNavigation.Modelo
+                            </td>
+                            <td>@multa.Descripcion</td>
+                            <td>RD$ @multa.Monto.ToString("N2")</td>
+                            <td>@multa.Fecha.ToString("dd/MM/yyyy HH:mm")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+}
+
+@code {
+    private List<Cargo> multas = new();
+
+    private bool cargando = true;
+    private string? error;
+
+    private decimal totalMultas =>
+        multas.Sum(m => m.Monto);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarMultas();
+    }
+
+    private async Task CargarMultas()
+    {
+        cargando = true;
+        error = null;
+
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+
+            multas = await db.Cargo
+                .AsNoTracking()
+                .Include(c => c.IdTipoCargoNavigation)
+                .Include(c => c.IdContratoNavigation)
+                    .ThenInclude(c => c.IdClienteNavigation)
+                .Include(c => c.IdContratoNavigation)
+                    .ThenInclude(c => c.IdVehiculoNavigation)
+                .Where(c => c.IdTipoCargoNavigation.Nombre == "Retraso")
+                .OrderByDescending(c => c.Fecha)
+                .ToListAsync();
+        }
+        catch (Exception)
+        {
+            error = "No se pudieron cargar las multas. Verifica la conexión con SQL Server.";
+        }
+        finally
+        {
+            cargando = false;
+        }
+    }
+}
