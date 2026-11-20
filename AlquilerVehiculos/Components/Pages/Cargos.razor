@@ -1,0 +1,701 @@
+@page "/cargos"
+@rendermode InteractiveServer
+@attribute [Authorize]
+
+@using System.ComponentModel.DataAnnotations
+@using System.Security.Claims
+@using AlquilerVehiculos.Data
+@using AlquilerVehiculos.Models
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+
+@inject IDbContextFactory<AlquilerDbContext> DbFactory
+
+<PageTitle>Cargos adicionales</PageTitle>
+
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4">
+        <div>
+            <h1 class="h3 fw-bold mb-1">
+                <i class="bi bi-receipt-cutoff text-primary me-2"></i>Gestión de cargos adicionales
+            </h1>
+            <p class="text-secondary mb-0">Registra cargos asociados a contratos y consulta su historial.</p>
+        </div>
+        @if (autenticado && !cargando)
+        {
+            <div class="d-flex flex-wrap gap-2">
+                @if (esAdministrador)
+                {
+                    <button type="button" class="btn btn-outline-primary"
+                            @onclick="AlternarCatalogo" disabled="@guardando">
+                        <i class="bi bi-sliders me-2"></i>Tipos de cargo
+                    </button>
+                }
+                <button type="button" class="btn btn-primary"
+                        @onclick="NuevoCargo"
+                        disabled="@(guardando || contratos.Count == 0 || !tipos.Any(t => t.Activo))">
+                    <i class="bi bi-plus-circle me-2"></i>Nuevo cargo
+                </button>
+            </div>
+        }
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(mensaje))
+    {
+        <div class="alert alert-success" role="status">@mensaje</div>
+    }
+    @if (!string.IsNullOrWhiteSpace(error))
+    {
+        <div class="alert alert-danger" role="alert">@error</div>
+    }
+
+    @if (!autenticado)
+    {
+        <div class="alert alert-warning">Debes iniciar sesión para consultar este módulo.</div>
+    }
+    else if (cargando)
+    {
+        <p class="text-secondary">Cargando cargos adicionales...</p>
+    }
+    else
+    {
+        @if (contratos.Count == 0)
+        {
+            <div class="alert alert-info">
+                <i class="bi bi-info-circle me-2"></i>
+                Todavía no hay contratos. Podrás registrar cargos cuando exista al menos uno.
+            </div>
+        }
+        @if (!tipos.Any(t => t.Activo))
+        {
+            <div class="alert alert-warning">
+                No hay tipos de cargo activos. Un administrador debe configurarlos antes de registrar cargos.
+            </div>
+        }
+
+        @if (mostrarFormularioCargo)
+        {
+            <div class="card border-0 shadow-sm rounded-3 mb-4">
+                <div class="card-header bg-white border-0 px-4 pt-4">
+                    <h2 class="h5 fw-bold mb-1">
+                        <i class="bi bi-plus-square text-primary me-2"></i>Registrar cargo adicional
+                    </h2>
+                    <p class="text-secondary small mb-0">El monto se sumará al saldo del contrato seleccionado.</p>
+                </div>
+                <div class="card-body p-4">
+                    <EditForm Model="@formularioCargo" OnValidSubmit="@GuardarCargo">
+                        <DataAnnotationsValidator />
+                        <ValidationSummary />
+
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Contrato *</label>
+                                <InputSelect class="form-select" @bind-Value="formularioCargo.IdContrato">
+                                    <option value="0">Seleccione un contrato</option>
+                                    @foreach (var contrato in contratos)
+                                    {
+                                        <option value="@contrato.IdContrato">
+                                            #@contrato.IdContrato - @contrato.IdClienteNavigation.Nombre
+                                            @contrato.IdClienteNavigation.Apellido - @contrato.IdVehiculoNavigation.Matricula
+                                            (@contrato.Estado)
+                                        </option>
+                                    }
+                                </InputSelect>
+                                <ValidationMessage For="@(() => formularioCargo.IdContrato)" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Tipo de cargo *</label>
+                                <select class="form-select" value="@formularioCargo.IdTipoCargo"
+                                        @onchange="CambiarTipoCargo">
+                                    <option value="0">Seleccione un tipo</option>
+                                    @foreach (var tipo in tipos.Where(t => t.Activo))
+                                    {
+                                        <option value="@tipo.IdTipoCargo">@tipo.Nombre</option>
+                                    }
+                                </select>
+                                <ValidationMessage For="@(() => formularioCargo.IdTipoCargo)" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Monto (RD$) *</label>
+                                <InputNumber class="form-control" @bind-Value="formularioCargo.Monto"
+                                             min="0.01" step="0.01" disabled="@TieneMontoFijo" />
+                                @if (TieneMontoFijo)
+                                {
+                                    <div class="form-text">El tipo seleccionado tiene un monto fijo configurado.</div>
+                                }
+                                <ValidationMessage For="@(() => formularioCargo.Monto)" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Fecha</label>
+                                <input class="form-control" value="Automática al guardar" disabled />
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label fw-semibold">Descripción</label>
+                                <InputTextArea class="form-control" @bind-Value="formularioCargo.Descripcion"
+                                               maxlength="200" rows="3" />
+                                <ValidationMessage For="@(() => formularioCargo.Descripcion)" />
+                            </div>
+                        </div>
+
+                        <div class="d-flex flex-wrap gap-2 mt-4">
+                            <button type="submit" class="btn btn-primary px-4" disabled="@guardando">
+                                <i class="bi bi-check-circle me-2"></i>@(guardando ? "Guardando..." : "Guardar cargo")
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary" disabled="@guardando"
+                                    @onclick="CancelarCargo">Cancelar</button>
+                        </div>
+                    </EditForm>
+                </div>
+            </div>
+        }
+
+        @if (esAdministrador && mostrarCatalogo)
+        {
+            <div class="card border-0 shadow-sm rounded-3 mb-4">
+                <div class="card-header bg-white border-0 p-4">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                        <div>
+                            <h2 class="h5 fw-bold mb-1">
+                                <i class="bi bi-tags text-primary me-2"></i>Catálogo de tipos de cargo
+                            </h2>
+                            <p class="text-secondary small mb-0">Solo los administradores pueden modificar este catálogo.</p>
+                        </div>
+                        <div class="d-flex flex-wrap gap-2">
+                            <button class="btn btn-primary btn-sm" @onclick="NuevoTipo"
+                                    disabled="@guardando"><i class="bi bi-plus-lg me-1"></i>Nuevo tipo</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body p-4">
+                    @if (mostrarFormularioTipo)
+                    {
+                        <EditForm Model="@formularioTipo" OnValidSubmit="@GuardarTipo">
+                            <DataAnnotationsValidator />
+                            <ValidationSummary />
+                            <h3 class="h6 fw-bold mb-3">@(tipoEditandoId == 0 ? "Crear tipo" : "Editar tipo")</h3>
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="form-label fw-semibold">Nombre *</label>
+                                    <InputText class="form-control" @bind-Value="formularioTipo.Nombre" maxlength="50" />
+                                    <ValidationMessage For="@(() => formularioTipo.Nombre)" />
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label fw-semibold">Monto fijo (opcional)</label>
+                                    <InputNumber class="form-control" @bind-Value="formularioTipo.MontoFijo"
+                                                 min="0.01" step="0.01" />
+                                    <div class="form-text">Vacío: el empleado indicará el monto al registrar el cargo.</div>
+                                    <ValidationMessage For="@(() => formularioTipo.MontoFijo)" />
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label fw-semibold">Descripción</label>
+                                    <InputTextArea class="form-control" @bind-Value="formularioTipo.Descripcion"
+                                                   rows="2" maxlength="200" />
+                                    <ValidationMessage For="@(() => formularioTipo.Descripcion)" />
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-check-label">
+                                        <InputCheckbox class="form-check-input me-2" @bind-Value="formularioTipo.Activo" />
+                                        Tipo activo
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="d-flex flex-wrap gap-2 mt-3 mb-4">
+                                <button class="btn btn-primary" type="submit" disabled="@guardando">
+                                    @(guardando ? "Guardando..." : "Guardar tipo")
+                                </button>
+                                <button class="btn btn-outline-secondary" type="button"
+                                        disabled="@guardando" @onclick="CancelarTipo">Cancelar</button>
+                            </div>
+                        </EditForm>
+                    }
+
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Tipo</th>
+                                    <th>Descripción</th>
+                                    <th>Monto fijo</th>
+                                    <th>Estado</th>
+                                    <th class="text-end">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var tipo in tipos)
+                                {
+                                    <tr @key="tipo.IdTipoCargo">
+                                        <td class="fw-semibold">@tipo.Nombre</td>
+                                        <td>@(tipo.Descripcion ?? "—")</td>
+                                        <td>@(tipo.MontoFijo.HasValue ? $"RD$ {tipo.MontoFijo.Value:N2}" : "Variable")</td>
+                                        <td>
+                                            <span class="badge @(tipo.Activo ? "bg-success-subtle text-success" : "bg-secondary-subtle text-secondary")">
+                                                @(tipo.Activo ? "Activo" : "Inactivo")
+                                            </span>
+                                        </td>
+                                        <td class="text-end text-nowrap">
+                                            <button class="btn btn-sm btn-outline-primary me-1" disabled="@guardando"
+                                                    @onclick="() => EditarTipo(tipo.IdTipoCargo)">Editar</button>
+                                            <button class="btn btn-sm btn-outline-secondary" disabled="@guardando"
+                                                    @onclick="() => CambiarEstadoTipo(tipo.IdTipoCargo)">
+                                                @(tipo.Activo ? "Desactivar" : "Activar")
+                                            </button>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        }
+
+        <div class="card border-0 shadow-sm rounded-3">
+            <div class="card-header bg-white border-0 p-4">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+                    <div>
+                        <h2 class="h5 fw-bold mb-1">
+                            <i class="bi bi-card-list text-primary me-2"></i>Cargos registrados
+                        </h2>
+                        <p class="text-secondary small mb-0">Historial de cargos y sus contratos asociados.</p>
+                    </div>
+                    <span class="badge bg-primary-subtle text-primary rounded-pill px-3 py-2">
+                        Total: @cargos.Count
+                    </span>
+                </div>
+                <div class="row mt-3">
+                    <div class="col-lg-5">
+                        <label class="form-label small fw-semibold" for="filtro-contrato">Filtrar por contrato</label>
+                        <select id="filtro-contrato" class="form-select" @bind="filtroContrato">
+                            <option value="0">Todos los contratos</option>
+                            @foreach (var contrato in contratos)
+                            {
+                                <option value="@contrato.IdContrato">Contrato #@contrato.IdContrato</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                @if (!cargos.Any(c => filtroContrato == 0 || c.IdContrato == filtroContrato))
+                {
+                    <div class="alert alert-info m-3">No hay cargos registrados para el filtro seleccionado.</div>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Contrato</th>
+                                    <th>Tipo</th>
+                                    <th>Descripción</th>
+                                    <th>Fecha</th>
+                                    <th class="text-end">Monto (RD$)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var cargo in cargos.Where(c => filtroContrato == 0 || c.IdContrato == filtroContrato))
+                                {
+                                    <tr @key="cargo.IdCargo">
+                                        <td class="fw-semibold">#@cargo.IdContrato</td>
+                                        <td>@cargo.IdTipoCargoNavigation.Nombre</td>
+                                        <td>@(string.IsNullOrWhiteSpace(cargo.Descripcion) ? "—" : cargo.Descripcion)</td>
+                                        <td>@cargo.Fecha.ToString("dd/MM/yyyy HH:mm")</td>
+                                        <td class="text-end fw-semibold">@cargo.Monto.ToString("N2")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                            <tfoot class="table-light">
+                                <tr>
+                                    <th colspan="4" class="text-end">Total de cargos mostrados:</th>
+                                    <th class="text-end">@cargos.Where(c => filtroContrato == 0 || c.IdContrato == filtroContrato).Sum(c => c.Monto).ToString("N2")</th>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthenticationStateTask { get; set; }
+
+    private List<Contrato> contratos = new();
+    private List<TipoCargo> tipos = new();
+    private List<Cargo> cargos = new();
+    private CargoFormulario formularioCargo = new();
+    private TipoFormulario formularioTipo = new();
+
+    private bool cargando = true;
+    private bool guardando;
+    private bool autenticado;
+    private bool esAdministrador;
+    private bool mostrarFormularioCargo;
+    private bool mostrarCatalogo;
+    private bool mostrarFormularioTipo;
+    private int tipoEditandoId;
+    private int filtroContrato;
+    private int? usuarioActualId;
+    private string? mensaje;
+    private string? error;
+
+    private bool TieneMontoFijo => tipos.FirstOrDefault(t => t.IdTipoCargo == formularioCargo.IdTipoCargo)?.MontoFijo.HasValue == true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthenticationStateTask is null)
+        {
+            error = "La autenticación no está disponible. Revisa la configuración de rutas.";
+            cargando = false;
+            return;
+        }
+
+        var sesion = await AuthenticationStateTask;
+        autenticado = sesion.User.Identity?.IsAuthenticated == true;
+        esAdministrador = sesion.User.IsInRole("Administrador");
+        if (int.TryParse(sesion.User.FindFirstValue(ClaimTypes.NameIdentifier), out var id))
+            usuarioActualId = id;
+
+        if (autenticado)
+        {
+            // Solo el primer acceso a un catálogo vacío crea los tipos base.
+            await InicializarTiposSiCatalogoVacio();
+            await CargarDatos();
+        }
+        cargando = false;
+    }
+
+    private async Task CargarDatos()
+    {
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            contratos = await db.Contrato.AsNoTracking()
+                .Include(c => c.IdClienteNavigation)
+                .Include(c => c.IdVehiculoNavigation)
+                .OrderByDescending(c => c.IdContrato).ToListAsync();
+            tipos = await db.TipoCargo.AsNoTracking()
+                .OrderBy(t => t.Nombre).ToListAsync();
+            cargos = await db.Cargo.AsNoTracking()
+                .Include(c => c.IdTipoCargoNavigation)
+                .OrderByDescending(c => c.Fecha)
+                .ThenByDescending(c => c.IdCargo).ToListAsync();
+        }
+        catch (Exception)
+        {
+            error = "No fue posible cargar los cargos. Verifica la conexión y las tablas de la base de datos.";
+        }
+    }
+
+    private void NuevoCargo()
+    {
+        mensaje = null;
+        error = null;
+        formularioCargo = new CargoFormulario();
+        mostrarFormularioCargo = true;
+        mostrarFormularioTipo = false;
+        mostrarCatalogo = false;
+    }
+
+    private void CancelarCargo() => mostrarFormularioCargo = false;
+
+    private void CambiarTipoCargo(ChangeEventArgs args)
+    {
+        formularioCargo.IdTipoCargo = int.TryParse(args.Value?.ToString(), out var id) ? id : 0;
+        var tipo = tipos.FirstOrDefault(t => t.IdTipoCargo == formularioCargo.IdTipoCargo && t.Activo);
+        formularioCargo.Monto = tipo?.MontoFijo ?? 0m;
+    }
+
+    private async Task GuardarCargo()
+    {
+        if (!autenticado || guardando) return;
+        guardando = true;
+        mensaje = null;
+        error = null;
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var contratoExiste = await db.Contrato.AnyAsync(c => c.IdContrato == formularioCargo.IdContrato);
+            var tipo = await db.TipoCargo.AsNoTracking()
+                .FirstOrDefaultAsync(t => t.IdTipoCargo == formularioCargo.IdTipoCargo && t.Activo);
+
+            if (!contratoExiste || tipo is null)
+            {
+                error = "Selecciona un contrato existente y un tipo de cargo activo.";
+                return;
+            }
+
+            var monto = tipo.MontoFijo ?? formularioCargo.Monto;
+            if (monto <= 0 || monto > 99999999.99m)
+            {
+                error = "El monto debe ser mayor que cero y no superar RD$ 99,999,999.99.";
+                return;
+            }
+
+            var cargo = new Cargo
+            {
+                IdContrato = formularioCargo.IdContrato,
+                IdTipoCargo = tipo.IdTipoCargo,
+                Descripcion = string.IsNullOrWhiteSpace(formularioCargo.Descripcion)
+                    ? null : formularioCargo.Descripcion.Trim(),
+                Monto = monto,
+                Fecha = DateTime.Now
+            };
+
+            await using var transaccion = await db.Database.BeginTransactionAsync();
+            db.Cargo.Add(cargo);
+            await db.SaveChangesAsync();
+            AgregarAuditoria(db, "INSERT", "cargo", cargo.IdCargo.ToString(),
+                $"Contrato #{cargo.IdContrato}; tipo {tipo.Nombre}; monto {cargo.Monto:N2}");
+            await db.SaveChangesAsync();
+            await transaccion.CommitAsync();
+
+            mostrarFormularioCargo = false;
+            mensaje = $"Cargo #{cargo.IdCargo} registrado correctamente.";
+            await CargarDatos();
+        }
+        catch (DbUpdateException)
+        {
+            error = "No se pudo guardar el cargo. Revisa los datos relacionados con el contrato y tipo.";
+        }
+        catch (Exception)
+        {
+            error = "Ocurrió un error al guardar el cargo. No se confirmó la operación.";
+        }
+        finally
+        {
+            guardando = false;
+        }
+    }
+
+    private void AlternarCatalogo()
+    {
+        if (!esAdministrador) return;
+        mostrarCatalogo = !mostrarCatalogo;
+        mostrarFormularioTipo = false;
+        mostrarFormularioCargo = false;
+        error = null;
+        mensaje = null;
+    }
+
+    private void NuevoTipo()
+    {
+        if (!esAdministrador) return;
+        tipoEditandoId = 0;
+        formularioTipo = new TipoFormulario();
+        mostrarFormularioTipo = true;
+        mostrarFormularioCargo = false;
+        error = null;
+        mensaje = null;
+    }
+
+    private void EditarTipo(int id)
+    {
+        if (!esAdministrador || guardando) return;
+        var tipo = tipos.FirstOrDefault(t => t.IdTipoCargo == id);
+        if (tipo is null) return;
+        tipoEditandoId = id;
+        formularioTipo = new TipoFormulario
+        {
+            Nombre = tipo.Nombre,
+            Descripcion = tipo.Descripcion,
+            MontoFijo = tipo.MontoFijo,
+            Activo = tipo.Activo
+        };
+        mostrarFormularioTipo = true;
+        mostrarFormularioCargo = false;
+        mensaje = null;
+        error = null;
+    }
+
+    private void CancelarTipo() => mostrarFormularioTipo = false;
+
+    private async Task GuardarTipo()
+    {
+        if (!autenticado || !esAdministrador || guardando) return;
+        guardando = true;
+        mensaje = null;
+        error = null;
+        try
+        {
+            var nombre = formularioTipo.Nombre.Trim();
+            if (formularioTipo.MontoFijo is <= 0 or > 99999999.99m)
+            {
+                error = "El monto fijo debe ser mayor que cero si se especifica.";
+                return;
+            }
+
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var duplicado = await db.TipoCargo.AnyAsync(t =>
+                t.IdTipoCargo != tipoEditandoId && t.Nombre.ToLower() == nombre.ToLower());
+            if (duplicado)
+            {
+                error = "Ya existe un tipo de cargo con ese nombre.";
+                return;
+            }
+
+            TipoCargo tipo;
+            string accion;
+            if (tipoEditandoId == 0)
+            {
+                tipo = new TipoCargo();
+                db.TipoCargo.Add(tipo);
+                accion = "INSERT";
+            }
+            else
+            {
+                tipo = await db.TipoCargo.FirstOrDefaultAsync(t => t.IdTipoCargo == tipoEditandoId)
+                    ?? throw new InvalidOperationException("El tipo de cargo no existe.");
+                accion = "UPDATE";
+            }
+            tipo.Nombre = nombre;
+            tipo.Descripcion = string.IsNullOrWhiteSpace(formularioTipo.Descripcion)
+                ? null : formularioTipo.Descripcion.Trim();
+            tipo.MontoFijo = formularioTipo.MontoFijo;
+            tipo.Activo = formularioTipo.Activo;
+
+            await using var transaccion = await db.Database.BeginTransactionAsync();
+            await db.SaveChangesAsync();
+            AgregarAuditoria(db, accion, "tipo_cargo", tipo.IdTipoCargo.ToString(),
+                $"Tipo {tipo.Nombre}; activo {tipo.Activo}; monto fijo {tipo.MontoFijo}");
+            await db.SaveChangesAsync();
+            await transaccion.CommitAsync();
+
+            mostrarFormularioTipo = false;
+            mensaje = "Tipo de cargo guardado correctamente.";
+            await CargarDatos();
+        }
+        catch (DbUpdateException)
+        {
+            error = "No se pudo guardar el tipo. Comprueba que el nombre no esté repetido.";
+        }
+        catch (Exception)
+        {
+            error = "Ocurrió un error al guardar el tipo de cargo.";
+        }
+        finally
+        {
+            guardando = false;
+        }
+    }
+
+    private async Task CambiarEstadoTipo(int id)
+    {
+        if (!autenticado || !esAdministrador || guardando) return;
+        guardando = true;
+        error = null;
+        mensaje = null;
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var tipo = await db.TipoCargo.FirstOrDefaultAsync(t => t.IdTipoCargo == id);
+            if (tipo is null) return;
+            tipo.Activo = !tipo.Activo;
+            await using var transaccion = await db.Database.BeginTransactionAsync();
+            await db.SaveChangesAsync();
+            AgregarAuditoria(db, "UPDATE", "tipo_cargo", tipo.IdTipoCargo.ToString(),
+                $"Tipo {tipo.Nombre}; activo {tipo.Activo}");
+            await db.SaveChangesAsync();
+            await transaccion.CommitAsync();
+            mensaje = tipo.Activo ? "Tipo activado." : "Tipo desactivado.";
+            await CargarDatos();
+        }
+        catch (Exception)
+        {
+            error = "No se pudo cambiar el estado del tipo de cargo.";
+        }
+        finally
+        {
+            guardando = false;
+        }
+    }
+
+    private async Task InicializarTiposSiCatalogoVacio()
+    {
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            // Evita dos inicializaciones simultáneas en el primer acceso.
+            await using var transaccion = await db.Database.BeginTransactionAsync(
+                System.Data.IsolationLevel.Serializable);
+
+            // No repone tipos eliminados o renombrados después de configurar el catálogo.
+            // Tampoco reactiva tipos desactivados: estos siguen existiendo en la tabla.
+            if (await db.TipoCargo.AnyAsync())
+            {
+                await transaccion.CommitAsync();
+                return;
+            }
+
+            var iniciales = new List<TipoCargo>
+            {
+                new() { Nombre = "Retraso", Descripcion = "Multa por devolución tardía (se calcula por día extra)", Activo = true },
+                new() { Nombre = "Daño", Descripcion = "Cobro por daños al vehículo", Activo = true },
+                new() { Nombre = "Combustible", Descripcion = "Reposición de combustible faltante", Activo = true },
+                new() { Nombre = "Limpieza", Descripcion = "Limpieza extraordinaria del vehículo", Activo = true },
+                new() { Nombre = "Otro", Descripcion = "Otros cargos", Activo = true }
+            };
+
+            db.TipoCargo.AddRange(iniciales);
+            await db.SaveChangesAsync();
+            foreach (var tipo in iniciales)
+            {
+                AgregarAuditoria(db, "INSERT", "tipo_cargo", tipo.IdTipoCargo.ToString(),
+                    $"Creación automática del tipo inicial {tipo.Nombre}");
+            }
+            await db.SaveChangesAsync();
+            await transaccion.CommitAsync();
+        }
+        catch (Exception)
+        {
+            error = "No se pudieron cargar los tipos iniciales automáticamente. Revisa la base de datos.";
+        }
+    }
+
+    private void AgregarAuditoria(AlquilerDbContext db, string accion, string tabla, string idRegistro, string descripcion)
+    {
+        db.Auditoria.Add(new Auditoria
+        {
+            IdUsuario = usuarioActualId,
+            Accion = accion,
+            TablaAfectada = tabla,
+            IdRegistro = idRegistro,
+            Descripcion = descripcion,
+            ValorNuevo = descripcion,
+            FechaHora = DateTime.Now
+        });
+    }
+
+    private sealed class CargoFormulario
+    {
+        [Range(1, int.MaxValue, ErrorMessage = "Selecciona un contrato.")]
+        public int IdContrato { get; set; }
+
+        [Range(1, int.MaxValue, ErrorMessage = "Selecciona un tipo de cargo.")]
+        public int IdTipoCargo { get; set; }
+
+        [Range(typeof(decimal), "0.01", "99999999.99", ErrorMessage = "El monto debe ser mayor que cero.")]
+        public decimal Monto { get; set; }
+
+        [StringLength(200, ErrorMessage = "La descripción admite hasta 200 caracteres.")]
+        public string? Descripcion { get; set; }
+    }
+
+    private sealed class TipoFormulario
+    {
+        [Required(ErrorMessage = "El nombre es obligatorio.")]
+        [StringLength(50, ErrorMessage = "El nombre admite hasta 50 caracteres.")]
+        public string Nombre { get; set; } = string.Empty;
+
+        [StringLength(200, ErrorMessage = "La descripción admite hasta 200 caracteres.")]
+        public string? Descripcion { get; set; }
+
+        [Range(typeof(decimal), "0.01", "99999999.99", ErrorMessage = "El monto fijo debe ser mayor que cero.")]
+        public decimal? MontoFijo { get; set; }
+
+        public bool Activo { get; set; } = true;
+    }
+}

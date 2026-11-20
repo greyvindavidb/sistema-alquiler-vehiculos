@@ -1,5 +1,5 @@
 @page "/login"
- @attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Administrador")]
+@attribute [Microsoft.AspNetCore.Authorization.AllowAnonymous]
 @layout AlquilerVehiculos.Components.Layout.LoginLayout
 @using Microsoft.AspNetCore.Antiforgery
 @inject IAntiforgery Antiforgery
