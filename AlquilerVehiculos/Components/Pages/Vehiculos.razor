@@ -110,7 +110,8 @@ else
                                          @bind-Value="formulario.Kilometraje" />
                             <ValidationMessage For="@(() => formulario.Kilometraje)" />
                         </div>
-
+                       @if (esEdicion)
+                           {
                         <div class="col-md-6 mb-3">
                             <label class="form-label fw-semibold" for="estado">Estado</label>
                             
@@ -120,11 +121,9 @@ else
                            <option value="activo">Activo</option>
                            <option value="fuera_de_servicio">Fuera de servicio</option>
                          </InputSelect>
-
-                         
                             <ValidationMessage For="@(() => formulario.Estado)" />
                         </div>
-
+                          }
                         
                     </div>
 
@@ -392,7 +391,7 @@ else
                     Modelo = formulario.Modelo.Trim(),
                     Anio = (short)formulario.Anio,
                     Kilometraje = formulario.Kilometraje,
-                    Estado = formulario.Estado
+                    Estado = "activo"
                 };
 
                 db.Vehiculo.Add(vehiculo);
@@ -474,6 +473,8 @@ else
         formulario = new FormularioVehiculo();
         idVehiculoEdicion = null;
         esEdicion = false;
+        error = null;
+        mensaje = null;
     }
 
     private sealed class FormularioVehiculo

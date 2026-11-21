@@ -1,0 +1,149 @@
+
+@page "/danos"
+@rendermode InteractiveServer
+
+@using Microsoft.EntityFrameworkCore
+@using AlquilerVehiculos.Models
+@using AlquilerVehiculos.Data
+
+@inject IDbContextFactory<AlquilerDbContext> DbFactory
+
+<PageTitle>Consulta de daños</PageTitle>
+
+<h1>Gestión de daños</h1>
+<p>Consulta de los daños registrados durante la devolución de vehículos.</p>
+
+@if (!string.IsNullOrWhiteSpace(error))
+{
+    <div class="alert alert-danger">@error</div>
+}
+
+@if (cargando)
+{
+    <p>Cargando información...</p>
+}
+else
+{
+    <div class="card mb-4">
+        <div class="card-body">
+            <h5>Resumen de daños</h5>
+            <p>Daños registrados: @danos.Count</p>
+            <p>
+                Costo total de daños:
+                <strong>RD$ @totalDanos.ToString("N2")</strong>
+            </p>
+            <p>
+                Cargos generados:
+                <strong>@danos.Count(d => d.IdCargo.HasValue)</strong>
+            </p>
+        </div>
+    </div>
+
+    <h5>Daños registrados</h5>
+
+    @if (danos.Count == 0)
+    {
+        <div class="alert alert-info">
+            Todavía no hay daños registrados.
+        </div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-striped table-hover">
+                <thead>
+                    <tr>
+                        <th>ID daño</th>
+                        <th>N.º contrato</th>
+                        <th>Cliente</th>
+                        <th>Vehículo</th>
+                        <th>Descripción</th>
+                        <th>Costo</th>
+                        <th>Usuario</th>
+                        <th>Fecha</th>
+                        <th>Cargo</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var dano in danos)
+                    {
+                        <tr @key="dano.IdDano">
+                            <td>@dano.IdDano</td>
+                            <td>#@dano.IdContrato</td>
+                            <td>
+                                @dano.IdContratoNavigation.IdClienteNavigation.Nombre
+                                @dano.IdContratoNavigation.IdClienteNavigation.Apellido
+                            </td>
+                            <td>
+                                @dano.IdContratoNavigation.IdVehiculoNavigation.Marca
+                                @dano.IdContratoNavigation.IdVehiculoNavigation.Modelo
+                            </td>
+                            <td>@dano.Descripcion</td>
+                            <td>RD$ @dano.Costo.ToString("N2")</td>
+                            <td>@dano.IdUsuarioNavigation.NombreCompleto</td>
+                            <td>@dano.FechaRegistro.ToString("dd/MM/yyyy HH:mm")</td>
+                            <td>
+                                @if (dano.IdCargo.HasValue)
+                                {
+                                    <span class="badge bg-success">
+                                        Generado
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-secondary">
+                                        No generado
+                                    </span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+}
+
+@code {
+    private List<Dano> danos = new();
+
+    private bool cargando = true;
+    private string? error;
+
+    private decimal totalDanos =>
+        danos.Sum(d => d.Costo);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarDanos();
+    }
+
+    private async Task CargarDanos()
+    {
+        cargando = true;
+        error = null;
+
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+
+            danos = await db.Dano
+                .AsNoTracking()
+                .Include(d => d.IdContratoNavigation)
+                    .ThenInclude(c => c.IdClienteNavigation)
+                .Include(d => d.IdContratoNavigation)
+                    .ThenInclude(c => c.IdVehiculoNavigation)
+                .Include(d => d.IdUsuarioNavigation)
+                .OrderByDescending(d => d.FechaRegistro)
+                .ToListAsync();
+        }
+        catch (Exception)
+        {
+            error = "No se pudieron cargar los daños. Verifica la conexión con SQL Server.";
+        }
+        finally
+        {
+            cargando = false;
+        }
+    }
+}

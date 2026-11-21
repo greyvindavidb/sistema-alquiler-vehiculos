@@ -1,0 +1,1024 @@
+
+@page "/entrega-devolucion"
+@rendermode InteractiveServer
+
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.AspNetCore.Components.Forms
+@using System.ComponentModel.DataAnnotations
+@using System.Globalization
+@using System.Text
+@using AlquilerVehiculos.Models
+@using AlquilerVehiculos.Data
+@using AlquilerVehiculos.Services
+@using EntregaDevolucionModel = AlquilerVehiculos.Models.EntregaDevolucion
+
+@inject IDbContextFactory<AlquilerDbContext> DbFactory
+@inject MultaService MultaService
+
+<PageTitle>Entrega y devolución</PageTitle>
+
+<div class="container-fluid py-4">
+
+    <div class="mb-4">
+        <h1 class="h3 fw-bold mb-1">
+            <i class="bi bi-car-front-fill text-primary me-2"></i>
+            Gestión de entrega y devolución
+        </h1>
+        <p class="text-secondary mb-0">
+            Registro y consulta de las entregas y devoluciones de vehículos.
+        </p>
+    </div>
+
+    @if (!string.IsNullOrEmpty(MensajeExito))
+    {
+        <div class="alert alert-success alert-dismissible fade show">
+            @MensajeExito
+            <button type="button" class="btn-close"
+                    @onclick="() => MensajeExito = null"></button>
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(MensajeError))
+    {
+        <div class="alert alert-danger alert-dismissible fade show">
+            @MensajeError
+            <button type="button" class="btn-close"
+                    @onclick="() => MensajeError = null"></button>
+        </div>
+    }
+
+    @if (Cargando)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary"></div>
+            <p class="text-secondary mt-3">Cargando información...</p>
+        </div>
+    }
+    else
+    {
+        <!-- REGISTRO DE ENTREGA -->
+
+        <div class="card border-0 shadow-sm rounded-3 mb-4">
+            <div class="card-header bg-white p-4 border-0">
+                <h2 class="h5 fw-bold mb-1">
+                    <i class="bi bi-box-arrow-right text-primary me-2"></i>
+                    Registrar entrega de vehículo
+                </h2>
+                <p class="text-secondary mb-0">
+                    Registra las condiciones del vehículo al momento de entregarlo.
+                </p>
+            </div>
+
+            <div class="card-body p-4">
+                @if (ContratosPendientes.Count == 0)
+                {
+                    <div class="alert alert-info mb-0">
+                        No hay contratos abiertos pendientes de entrega.
+                    </div>
+                }
+                else if (Sucursales.Count == 0 || Usuarios.Count == 0)
+                {
+                    <div class="alert alert-warning mb-0">
+                        Debe existir al menos una sucursal activa y un usuario activo.
+                    </div>
+                }
+                else
+                {
+                    <EditForm Model="Formulario" OnValidSubmit="GuardarEntrega">
+                        <DataAnnotationsValidator />
+                        <ValidationSummary class="alert alert-danger" />
+
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Contrato</label>
+                                <InputSelect @bind-Value="Formulario.IdContrato"
+                                             class="form-select">
+                                    <option value="0">Seleccione un contrato</option>
+                                    @foreach (var contrato in ContratosPendientes)
+                                    {
+                                        <option value="@contrato.IdContrato">
+                                            Contrato #@contrato.IdContrato -
+                                            @contrato.IdClienteNavigation.Nombre
+                                            @contrato.IdClienteNavigation.Apellido -
+                                            @contrato.IdVehiculoNavigation.Matricula
+                                        </option>
+                                    }
+                                </InputSelect>
+                                <ValidationMessage For="@(() => Formulario.IdContrato)" />
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Sucursal</label>
+                                <InputSelect @bind-Value="Formulario.IdSucursal"
+                                             class="form-select">
+                                    <option value="0">Seleccione una sucursal</option>
+                                    @foreach (var sucursal in Sucursales)
+                                    {
+                                        <option value="@sucursal.IdSucursal">
+                                            @sucursal.Nombre
+                                        </option>
+                                    }
+                                </InputSelect>
+                                <ValidationMessage For="@(() => Formulario.IdSucursal)" />
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Usuario responsable</label>
+                                <InputSelect @bind-Value="Formulario.IdUsuario"
+                                             class="form-select">
+                                    <option value="0">Seleccione un responsable</option>
+                                    @foreach (var usuario in Usuarios)
+                                    {
+                                        <option value="@usuario.IdUsuario">
+                                            @usuario.NombreCompleto
+                                        </option>
+                                    }
+                                </InputSelect>
+                                <ValidationMessage For="@(() => Formulario.IdUsuario)" />
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Fecha y hora de entrega</label>
+                                <InputDate @bind-Value="Formulario.FechaHora"
+                                           Type="InputDateType.DateTimeLocal"
+                                           class="form-control" />
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Kilometraje de salida</label>
+                                <InputNumber @bind-Value="Formulario.Kilometraje"
+                                             class="form-control"
+                                             min="0" />
+                                <ValidationMessage For="@(() => Formulario.Kilometraje)" />
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Nivel de combustible</label>
+                                <InputSelect @bind-Value="Formulario.Combustible"
+                                             class="form-select">
+                                    <option value="vacío">Vacío</option>
+                                    <option value="1/4">1/4</option>
+                                    <option value="1/2">1/2</option>
+                                    <option value="3/4">3/4</option>
+                                    <option value="lleno">Lleno</option>
+                                </InputSelect>
+                            </div>
+
+                            <div class="col-12">
+                                <label class="form-label fw-semibold">
+                                    Observaciones y checklist del vehículo
+                                </label>
+                                <InputTextArea @bind-Value="Formulario.Observaciones"
+                                               class="form-control"
+                                               rows="4"
+                                               maxlength="500"
+                                               placeholder="Describe el estado del vehículo y cualquier observación..." />
+                                <ValidationMessage For="@(() => Formulario.Observaciones)" />
+                                <small class="text-secondary">Máximo 500 caracteres.</small>
+                            </div>
+
+                            <div class="col-12 d-flex justify-content-end">
+                                <button type="submit"
+                                        class="btn btn-primary px-4"
+                                        disabled="@Guardando">
+                                    @if (Guardando)
+                                    {
+                                        <span class="spinner-border spinner-border-sm me-2"></span>
+                                        <span>Guardando...</span>
+                                    }
+                                    else
+                                    {
+                                        <i class="bi bi-save me-2"></i>
+                                        <span>Registrar entrega</span>
+                                    }
+                                </button>
+                            </div>
+                        </div>
+                    </EditForm>
+                }
+            </div>
+        </div>
+
+        <!-- REGISTRO DE DEVOLUCIÓN -->
+
+        <div class="card border-0 shadow-sm rounded-3 mb-4">
+            <div class="card-header bg-white p-4 border-0">
+                <h2 class="h5 fw-bold mb-1">
+                    <i class="bi bi-box-arrow-in-left text-success me-2"></i>
+                    Registrar devolución de vehículo
+                </h2>
+                <p class="text-secondary mb-0">
+                    Registra el retorno del vehículo, sus daños y los cargos que correspondan.
+                </p>
+            </div>
+
+            <div class="card-body p-4">
+                @if (ContratosParaDevolver.Count == 0)
+                {
+                    <div class="alert alert-info mb-0">
+                        No hay contratos pendientes de devolución.
+                    </div>
+                }
+                else if (Sucursales.Count == 0 || Usuarios.Count == 0)
+                {
+                    <div class="alert alert-warning mb-0">
+                        Debe existir al menos una sucursal activa y un usuario activo.
+                    </div>
+                }
+                else
+                {
+                    <EditForm Model="FormularioDevolucionDatos"
+                              OnValidSubmit="GuardarDevolucion">
+                        <DataAnnotationsValidator />
+                        <ValidationSummary class="alert alert-danger" />
+
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Contrato</label>
+                                <InputSelect @bind-Value="FormularioDevolucionDatos.IdContrato"
+                                             class="form-select">
+                                    <option value="0">Seleccione un contrato</option>
+                                    @foreach (var contrato in ContratosParaDevolver)
+                                    {
+                                        <option value="@contrato.IdContrato">
+                                            Contrato #@contrato.IdContrato -
+                                            @contrato.IdClienteNavigation.Nombre
+                                            @contrato.IdClienteNavigation.Apellido -
+                                            @contrato.IdVehiculoNavigation.Matricula
+                                        </option>
+                                    }
+                                </InputSelect>
+                                <ValidationMessage For="@(() => FormularioDevolucionDatos.IdContrato)" />
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Sucursal</label>
+                                <InputSelect @bind-Value="FormularioDevolucionDatos.IdSucursal"
+                                             class="form-select">
+                                    <option value="0">Seleccione una sucursal</option>
+                                    @foreach (var sucursal in Sucursales)
+                                    {
+                                        <option value="@sucursal.IdSucursal">
+                                            @sucursal.Nombre
+                                        </option>
+                                    }
+                                </InputSelect>
+                                <ValidationMessage For="@(() => FormularioDevolucionDatos.IdSucursal)" />
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Usuario responsable</label>
+                                <InputSelect @bind-Value="FormularioDevolucionDatos.IdUsuario"
+                                             class="form-select">
+                                    <option value="0">Seleccione un responsable</option>
+                                    @foreach (var usuario in Usuarios)
+                                    {
+                                        <option value="@usuario.IdUsuario">
+                                            @usuario.NombreCompleto
+                                        </option>
+                                    }
+                                </InputSelect>
+                                <ValidationMessage For="@(() => FormularioDevolucionDatos.IdUsuario)" />
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Fecha y hora de devolución</label>
+                                <InputDate @bind-Value="FormularioDevolucionDatos.FechaHora"
+                                           Type="InputDateType.DateTimeLocal"
+                                           class="form-control" />
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Kilometraje de devolución</label>
+                                <InputNumber @bind-Value="FormularioDevolucionDatos.Kilometraje"
+                                             class="form-control"
+                                             min="0" />
+                                <ValidationMessage For="@(() => FormularioDevolucionDatos.Kilometraje)" />
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Nivel de combustible</label>
+                                <InputSelect @bind-Value="FormularioDevolucionDatos.Combustible"
+                                             class="form-select">
+                                    <option value="vacío">Vacío</option>
+                                    <option value="1/4">1/4</option>
+                                    <option value="1/2">1/2</option>
+                                    <option value="3/4">3/4</option>
+                                    <option value="lleno">Lleno</option>
+                                </InputSelect>
+                            </div>
+
+                            <div class="col-12">
+                                <label class="form-label fw-semibold">Observaciones de devolución</label>
+                                <InputTextArea @bind-Value="FormularioDevolucionDatos.Observaciones"
+                                               class="form-control"
+                                               rows="3"
+                                               maxlength="500"
+                                               placeholder="Describe las condiciones en que se recibe el vehículo..." />
+                                <ValidationMessage For="@(() => FormularioDevolucionDatos.Observaciones)" />
+                            </div>
+                        </div>
+
+                        <hr class="my-4" />
+
+                        <!-- DAÑOS -->
+
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <div>
+                                <h3 class="h6 fw-bold mb-1">Daños detectados</h3>
+                                <p class="text-secondary small mb-0">
+                                    Agrega los daños encontrados al recibir el vehículo.
+                                </p>
+                            </div>
+                            <button type="button"
+                                    class="btn btn-outline-primary btn-sm"
+                                    @onclick="AgregarDano"
+                                    disabled="@Guardando">
+                                <i class="bi bi-plus-circle me-1"></i>
+                                Agregar daño
+                            </button>
+                        </div>
+
+                        @for (int i = 0; i < FormularioDevolucionDatos.Danos.Count; i++)
+                        {
+                            var dano = FormularioDevolucionDatos.Danos[i];
+
+                            <div class="border rounded-3 p-3 mb-3">
+                                <div class="d-flex justify-content-between align-items-center mb-3">
+                                    <strong>Daño @(i + 1)</strong>
+                                    <button type="button"
+                                            class="btn btn-outline-danger btn-sm"
+                                            @onclick="() => EliminarDano(dano)"
+                                            disabled="@Guardando">
+                                        <i class="bi bi-trash"></i>
+                                        Quitar
+                                    </button>
+                                </div>
+
+                                <div class="row g-3">
+                                    <div class="col-md-6">
+                                        <label class="form-label">Descripción</label>
+                                        <InputText @bind-Value="dano.Descripcion"
+                                                   class="form-control"
+                                                   maxlength="300"
+                                                   placeholder="Describe el daño encontrado..." />
+                                    </div>
+
+                                    <div class="col-md-3">
+                                        <label class="form-label">Costo</label>
+                                        <InputNumber @bind-Value="dano.Costo"
+                                                     class="form-control"
+                                                     min="0"
+                                                     step="0.01" />
+                                    </div>
+
+                                    <div class="col-md-3 d-flex align-items-end">
+                                        <div class="form-check mb-2">
+                                            <InputCheckbox @bind-Value="dano.GenerarCargo"
+                                                           class="form-check-input" />
+                                            <label class="form-check-label">
+                                                Generar cargo
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+                                <small class="text-secondary">
+                                    Si marcas «Generar cargo», el costo debe ser mayor que cero.
+                                </small>
+                            </div>
+                        }
+
+                        <div class="alert alert-light border">
+                            <strong>Multa por retraso:</strong>
+                            el sistema calculará automáticamente el cargo según la fecha pactada,
+                            la fecha de devolución y los parámetros configurados.
+                        </div>
+
+                        <div class="d-flex justify-content-end">
+                            <button type="submit"
+                                    class="btn btn-success px-4"
+                                    disabled="@Guardando">
+                                @if (Guardando)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-2"></span>
+                                    <span>Procesando devolución...</span>
+                                }
+                                else
+                                {
+                                    <i class="bi bi-check-circle me-2"></i>
+                                    <span>Registrar devolución</span>
+                                }
+                            </button>
+                        </div>
+                    </EditForm>
+                }
+            </div>
+        </div>
+
+        <!-- HISTORIAL -->
+
+        <div class="card border-0 shadow-sm rounded-3">
+            <div class="card-header bg-white p-4 border-0">
+                <h2 class="h5 fw-bold mb-0">
+                    <i class="bi bi-clock-history text-primary me-2"></i>
+                    Historial de entregas y devoluciones
+                </h2>
+            </div>
+
+            <div class="card-body">
+                @if (Historial.Count == 0)
+                {
+                    <div class="alert alert-info mb-0">
+                        Todavía no hay registros.
+                    </div>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Tipo</th>
+                                    <th>Contrato</th>
+                                    <th>Cliente</th>
+                                    <th>Vehículo</th>
+                                    <th>Matrícula</th>
+                                    <th>Kilometraje</th>
+                                    <th>Combustible</th>
+                                    <th>Sucursal</th>
+                                    <th>Responsable</th>
+                                    <th>Fecha y hora</th>
+                                    <th>Observaciones</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var registro in Historial)
+                                {
+                                    <tr>
+                                        <td>
+                                            @if (registro.Tipo == "entrega")
+                                            {
+                                                <span class="badge bg-primary">Entrega</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge bg-success">Devolución</span>
+                                            }
+                                        </td>
+                                        <td>#@registro.IdContrato</td>
+                                        <td>
+                                            @registro.IdContratoNavigation.IdClienteNavigation.Nombre
+                                            @registro.IdContratoNavigation.IdClienteNavigation.Apellido
+                                        </td>
+                                        <td>
+                                            @registro.IdContratoNavigation.IdVehiculoNavigation.Marca
+                                            @registro.IdContratoNavigation.IdVehiculoNavigation.Modelo
+                                        </td>
+                                        <td>@registro.IdContratoNavigation.IdVehiculoNavigation.Matricula</td>
+                                        <td>@registro.Kilometraje.ToString("N0") km</td>
+                                        <td>@registro.Combustible</td>
+                                        <td>@registro.IdSucursalNavigation.Nombre</td>
+                                        <td>@registro.IdUsuarioNavigation.NombreCompleto</td>
+                                        <td>@registro.FechaHora.ToString("dd/MM/yyyy HH:mm")</td>
+                                        <td>
+                                            @(string.IsNullOrWhiteSpace(registro.Observaciones)
+                                                ? "—"
+                                                : registro.Observaciones)
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private List<Contrato> ContratosPendientes = new();
+    private List<Contrato> ContratosParaDevolver = new();
+    private List<Sucursal> Sucursales = new();
+    private List<Usuario> Usuarios = new();
+    private List<EntregaDevolucionModel> Historial = new();
+
+    private bool Cargando = true;
+    private bool Guardando;
+
+    private string? MensajeExito;
+    private string? MensajeError;
+
+    private FormularioEntrega Formulario = new();
+    private FormularioDevolucion FormularioDevolucionDatos = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await CargarDatos();
+        }
+        catch (Exception ex)
+        {
+            MensajeError = $"No se pudo cargar la información: {ex.Message}";
+        }
+        finally
+        {
+            Cargando = false;
+        }
+    }
+
+    private async Task CargarDatos()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        ContratosPendientes = await db.Contrato
+            .AsNoTracking()
+            .Include(c => c.IdClienteNavigation)
+            .Include(c => c.IdVehiculoNavigation)
+            .Where(c => c.Estado == "abierto" &&
+                !db.EntregaDevolucion.Any(e =>
+                    e.IdContrato == c.IdContrato &&
+                    e.Tipo == "entrega"))
+            .OrderByDescending(c => c.FechaCreacion)
+            .ToListAsync();
+
+        ContratosParaDevolver = await db.Contrato
+            .AsNoTracking()
+            .Include(c => c.IdClienteNavigation)
+            .Include(c => c.IdVehiculoNavigation)
+            .Where(c => c.Estado == "abierto" &&
+                db.EntregaDevolucion.Any(e =>
+                    e.IdContrato == c.IdContrato &&
+                    e.Tipo == "entrega") &&
+                !db.EntregaDevolucion.Any(e =>
+                    e.IdContrato == c.IdContrato &&
+                    e.Tipo == "devolucion"))
+            .OrderByDescending(c => c.FechaCreacion)
+            .ToListAsync();
+
+        Sucursales = await db.Sucursal
+            .AsNoTracking()
+            .Where(s => s.Activa)
+            .OrderBy(s => s.Nombre)
+            .ToListAsync();
+
+        Usuarios = await db.Usuario
+            .AsNoTracking()
+            .Where(u => u.Activo)
+            .OrderBy(u => u.NombreCompleto)
+            .ToListAsync();
+
+        Historial = await db.EntregaDevolucion
+            .AsNoTracking()
+            .Include(e => e.IdContratoNavigation)
+                .ThenInclude(c => c.IdClienteNavigation)
+            .Include(e => e.IdContratoNavigation)
+                .ThenInclude(c => c.IdVehiculoNavigation)
+            .Include(e => e.IdSucursalNavigation)
+            .Include(e => e.IdUsuarioNavigation)
+            .OrderBy(e => e.IdContrato)
+            .ThenBy(e => e.FechaHora)
+            .ToListAsync();
+    }
+
+    // REGISTRAR ENTREGA
+
+    private async Task GuardarEntrega()
+    {
+        if (Guardando)
+            return;
+
+        Guardando = true;
+        MensajeError = null;
+        MensajeExito = null;
+
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+
+            var contrato = await db.Contrato
+                .Include(c => c.IdVehiculoNavigation)
+                .FirstOrDefaultAsync(c =>
+                    c.IdContrato == Formulario.IdContrato &&
+                    c.Estado == "abierto");
+
+            if (contrato == null)
+            {
+                MensajeError = "El contrato seleccionado no existe o no está abierto.";
+                return;
+            }
+
+            bool yaTieneEntrega = await db.EntregaDevolucion
+                .AnyAsync(e =>
+                    e.IdContrato == Formulario.IdContrato &&
+                    e.Tipo == "entrega");
+
+            if (yaTieneEntrega)
+            {
+                MensajeError = "Este contrato ya tiene una entrega registrada.";
+                return;
+            }
+
+            if (Formulario.Kilometraje < contrato.IdVehiculoNavigation.Kilometraje)
+            {
+                MensajeError = "El kilometraje de salida no puede ser menor al kilometraje actual del vehículo.";
+                return;
+            }
+
+            if (Formulario.FechaHora < contrato.FechaInicio)
+            {
+                MensajeError = "La fecha de entrega no puede ser anterior al inicio del contrato.";
+                return;
+            }
+
+            if (Formulario.FechaHora > contrato.FechaFinPactada)
+            {
+                MensajeError = "La fecha de entrega no puede ser posterior a la fecha de devolución pactada.";
+                return;
+            }
+
+            bool sucursalValida = await db.Sucursal.AnyAsync(s =>
+                s.IdSucursal == Formulario.IdSucursal && s.Activa);
+
+            if (!sucursalValida)
+            {
+                MensajeError = "La sucursal seleccionada no está activa.";
+                return;
+            }
+
+            bool usuarioValido = await db.Usuario.AnyAsync(u =>
+                u.IdUsuario == Formulario.IdUsuario && u.Activo);
+
+            if (!usuarioValido)
+            {
+                MensajeError = "El usuario seleccionado no está activo.";
+                return;
+            }
+
+            var nuevaEntrega = new EntregaDevolucionModel
+            {
+                IdContrato = Formulario.IdContrato,
+                IdSucursal = Formulario.IdSucursal,
+                IdUsuario = Formulario.IdUsuario,
+                Tipo = "entrega",
+                FechaHora = Formulario.FechaHora,
+                Kilometraje = Formulario.Kilometraje,
+                Combustible = Formulario.Combustible,
+                Observaciones = string.IsNullOrWhiteSpace(Formulario.Observaciones)
+                    ? null
+                    : Formulario.Observaciones.Trim()
+            };
+
+            db.EntregaDevolucion.Add(nuevaEntrega);
+            await db.SaveChangesAsync();
+
+            MensajeExito = "La entrega del vehículo se registró correctamente.";
+            Formulario = new FormularioEntrega();
+
+            await CargarDatos();
+        }
+        catch (DbUpdateException)
+        {
+            MensajeError = "No se pudo registrar la entrega. Es posible que ya exista una entrega para este contrato.";
+        }
+        catch (Exception ex)
+        {
+            MensajeError = $"Ocurrió un error al registrar la entrega: {ex.Message}";
+        }
+        finally
+        {
+            Guardando = false;
+        }
+    }
+
+    // REGISTRAR DEVOLUCIÓN, DAÑOS Y MULTA
+
+    private async Task GuardarDevolucion()
+    {
+        if (Guardando)
+            return;
+
+        Guardando = true;
+        MensajeError = null;
+        MensajeExito = null;
+
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+
+            var contrato = await db.Contrato
+                .Include(c => c.IdVehiculoNavigation)
+                .FirstOrDefaultAsync(c =>
+                    c.IdContrato == FormularioDevolucionDatos.IdContrato &&
+                    c.Estado == "abierto");
+
+            if (contrato == null)
+            {
+                MensajeError = "El contrato seleccionado no existe o no está abierto.";
+                return;
+            }
+
+            var entrega = await db.EntregaDevolucion
+                .FirstOrDefaultAsync(e =>
+                    e.IdContrato == contrato.IdContrato &&
+                    e.Tipo == "entrega");
+
+            if (entrega == null)
+            {
+                MensajeError = "Este contrato no tiene una entrega registrada.";
+                return;
+            }
+
+            bool yaTieneDevolucion = await db.EntregaDevolucion
+                .AnyAsync(e =>
+                    e.IdContrato == contrato.IdContrato &&
+                    e.Tipo == "devolucion");
+
+            if (yaTieneDevolucion)
+            {
+                MensajeError = "Este contrato ya tiene una devolución registrada.";
+                return;
+            }
+
+            if (FormularioDevolucionDatos.FechaHora < entrega.FechaHora)
+            {
+                MensajeError = "La fecha de devolución no puede ser anterior a la fecha de entrega.";
+                return;
+            }
+
+            if (FormularioDevolucionDatos.FechaHora > DateTime.Now)
+            {
+                MensajeError = "La fecha de devolución no puede ser futura.";
+                return;
+            }
+
+            if (FormularioDevolucionDatos.Kilometraje < entrega.Kilometraje)
+            {
+                MensajeError = "El kilometraje de devolución no puede ser menor al kilometraje de salida.";
+                return;
+            }
+
+            bool sucursalValida = await db.Sucursal.AnyAsync(s =>
+                s.IdSucursal == FormularioDevolucionDatos.IdSucursal && s.Activa);
+
+            if (!sucursalValida)
+            {
+                MensajeError = "La sucursal seleccionada no está activa.";
+                return;
+            }
+
+            bool usuarioValido = await db.Usuario.AnyAsync(u =>
+                u.IdUsuario == FormularioDevolucionDatos.IdUsuario && u.Activo);
+
+            if (!usuarioValido)
+            {
+                MensajeError = "El usuario seleccionado no está activo.";
+                return;
+            }
+
+            // VALIDAR DAÑOS
+
+            var danosRegistrados = FormularioDevolucionDatos.Danos
+                .Where(d =>
+                    !string.IsNullOrWhiteSpace(d.Descripcion) ||
+                    d.Costo != 0 ||
+                    d.GenerarCargo)
+                .ToList();
+
+            foreach (var dano in danosRegistrados)
+            {
+                if (string.IsNullOrWhiteSpace(dano.Descripcion))
+                {
+                    MensajeError = "Todos los daños registrados deben tener una descripción.";
+                    return;
+                }
+
+                if (dano.Descripcion.Trim().Length > 300)
+                {
+                    MensajeError = "La descripción de un daño no puede superar 300 caracteres.";
+                    return;
+                }
+
+                if (dano.Costo < 0)
+                {
+                    MensajeError = "El costo de un daño no puede ser negativo.";
+                    return;
+                }
+
+                if (dano.GenerarCargo && dano.Costo <= 0)
+                {
+                    MensajeError = "El costo debe ser mayor que cero cuando se genera un cargo por daño.";
+                    return;
+                }
+            }
+
+            bool hayCargosPorDanos = danosRegistrados.Any(d => d.GenerarCargo);
+
+            // BUSCAR TIPO DE CARGO DAÑO
+
+            TipoCargo? tipoCargoDano = null;
+
+            if (hayCargosPorDanos)
+            {
+                var tipos = await db.TipoCargo
+                    .Where(t => t.Activo)
+                    .ToListAsync();
+
+                tipoCargoDano = tipos.FirstOrDefault(t =>
+                    NormalizarTexto(t.Nombre) == "dano");
+
+                if (tipoCargoDano == null)
+                {
+                    MensajeError = "No existe un tipo de cargo activo llamado Daño.";
+                    return;
+                }
+            }
+
+            // TRANSACCIÓN Y CÁLCULO DE MULTA
+
+            await using var transaccion = await db.Database.BeginTransactionAsync();
+
+            decimal multa = await MultaService.RegistrarMultaAsync(
+                db,
+                contrato,
+                FormularioDevolucionDatos.FechaHora);
+
+            var nuevaDevolucion = new EntregaDevolucionModel
+            {
+                IdContrato = contrato.IdContrato,
+                IdSucursal = FormularioDevolucionDatos.IdSucursal,
+                IdUsuario = FormularioDevolucionDatos.IdUsuario,
+                Tipo = "devolucion",
+                FechaHora = FormularioDevolucionDatos.FechaHora,
+                Kilometraje = FormularioDevolucionDatos.Kilometraje,
+                Combustible = FormularioDevolucionDatos.Combustible,
+                Observaciones = string.IsNullOrWhiteSpace(FormularioDevolucionDatos.Observaciones)
+                    ? null
+                    : FormularioDevolucionDatos.Observaciones.Trim()
+            };
+
+            db.EntregaDevolucion.Add(nuevaDevolucion);
+
+            // REGISTRAR DAÑOS Y CARGOS OPCIONALES
+
+            foreach (var danoFormulario in danosRegistrados)
+            {
+                int? idCargo = null;
+
+                if (danoFormulario.GenerarCargo && tipoCargoDano != null)
+                {
+                    var nuevoCargo = new Cargo
+                    {
+                        IdContrato = contrato.IdContrato,
+                        IdTipoCargo = tipoCargoDano.IdTipoCargo,
+                        Descripcion = danoFormulario.Descripcion.Trim().Length > 200
+                            ? danoFormulario.Descripcion.Trim().Substring(0, 200)
+                            : danoFormulario.Descripcion.Trim(),
+                        Monto = danoFormulario.Costo,
+                        Fecha = FormularioDevolucionDatos.FechaHora
+                    };
+
+                    db.Cargo.Add(nuevoCargo);
+                    await db.SaveChangesAsync();
+
+                    idCargo = nuevoCargo.IdCargo;
+                }
+
+                var nuevoDano = new Dano
+                {
+                    IdContrato = contrato.IdContrato,
+                    IdUsuario = FormularioDevolucionDatos.IdUsuario,
+                    IdCargo = idCargo,
+                    Descripcion = danoFormulario.Descripcion.Trim(),
+                    Costo = danoFormulario.Costo,
+                    FechaRegistro = FormularioDevolucionDatos.FechaHora
+                };
+
+                db.Dano.Add(nuevoDano);
+            }
+
+            // ACTUALIZAR VEHÍCULO Y CERRAR CONTRATO
+
+            contrato.IdVehiculoNavigation.Kilometraje =
+                FormularioDevolucionDatos.Kilometraje;
+
+            contrato.Estado = "cerrado";
+
+            await db.SaveChangesAsync();
+            await transaccion.CommitAsync();
+
+            MensajeExito = multa > 0
+                ? $"Devolución registrada correctamente. Se generó una multa por retraso de {multa.ToString("C2")}."
+                : "La devolución del vehículo se registró correctamente.";
+
+            FormularioDevolucionDatos = new FormularioDevolucion();
+
+            await CargarDatos();
+        }
+        catch (DbUpdateException)
+        {
+            MensajeError = "No se pudo completar la devolución. Verifica los datos y las relaciones de la base de datos.";
+        }
+        catch (Exception ex)
+        {
+            MensajeError = $"Ocurrió un error al registrar la devolución: {ex.Message}";
+        }
+        finally
+        {
+            Guardando = false;
+        }
+    }
+
+    // ADMINISTRAR DAÑOS DEL FORMULARIO
+
+    private void AgregarDano()
+    {
+        FormularioDevolucionDatos.Danos.Add(new FormularioDano());
+    }
+
+    private void EliminarDano(FormularioDano dano)
+    {
+        FormularioDevolucionDatos.Danos.Remove(dano);
+    }
+
+    // NORMALIZAR NOMBRES DE TIPOS DE CARGO
+
+    private static string NormalizarTexto(string texto)
+    {
+        string normalizado = texto.Normalize(NormalizationForm.FormD);
+        var resultado = new StringBuilder();
+
+        foreach (char caracter in normalizado)
+        {
+            if (CharUnicodeInfo.GetUnicodeCategory(caracter) !=
+                UnicodeCategory.NonSpacingMark)
+            {
+                resultado.Append(caracter);
+            }
+        }
+
+        return resultado.ToString()
+            .Normalize(NormalizationForm.FormC)
+            .Trim()
+            .ToLowerInvariant();
+    }
+
+    // FORMULARIOS
+
+    public class FormularioEntrega
+    {
+        [Range(1, int.MaxValue, ErrorMessage = "Seleccione un contrato.")]
+        public int IdContrato { get; set; }
+
+        [Range(1, int.MaxValue, ErrorMessage = "Seleccione una sucursal.")]
+        public int IdSucursal { get; set; }
+
+        [Range(1, int.MaxValue, ErrorMessage = "Seleccione un responsable.")]
+        public int IdUsuario { get; set; }
+
+        [Range(0, int.MaxValue, ErrorMessage = "El kilometraje no puede ser negativo.")]
+        public int Kilometraje { get; set; }
+
+        public DateTime FechaHora { get; set; } = DateTime.Now;
+
+        [Required(ErrorMessage = "Seleccione el nivel de combustible.")]
+        public string Combustible { get; set; } = "lleno";
+
+        [StringLength(500, ErrorMessage = "Las observaciones no pueden superar los 500 caracteres.")]
+        public string? Observaciones { get; set; }
+    }
+
+    public class FormularioDevolucion
+    {
+        [Range(1, int.MaxValue, ErrorMessage = "Seleccione un contrato.")]
+        public int IdContrato { get; set; }
+
+        [Range(1, int.MaxValue, ErrorMessage = "Seleccione una sucursal.")]
+        public int IdSucursal { get; set; }
+
+        [Range(1, int.MaxValue, ErrorMessage = "Seleccione un responsable.")]
+        public int IdUsuario { get; set; }
+
+        [Range(0, int.MaxValue, ErrorMessage = "El kilometraje no puede ser negativo.")]
+        public int Kilometraje { get; set; }
+
+        public DateTime FechaHora { get; set; } = DateTime.Now;
+
+        [Required(ErrorMessage = "Seleccione el nivel de combustible.")]
+        public string Combustible { get; set; } = "lleno";
+
+        [StringLength(500, ErrorMessage = "Las observaciones no pueden superar los 500 caracteres.")]
+        public string? Observaciones { get; set; }
+
+        public List<FormularioDano> Danos { get; set; } =
+            new() { new FormularioDano() };
+    }
+
+    public class FormularioDano
+    {
+        public string Descripcion { get; set; } = string.Empty;
+        public decimal Costo { get; set; }
+        public bool GenerarCargo { get; set; }
+    }
+}

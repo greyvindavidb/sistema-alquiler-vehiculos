@@ -303,16 +303,18 @@ else
                     error = "El nombre de la categoría es obligatorio.";
                     return;
                 }
+              var nombres = await db.Categoria
+                .Where(c => !esEdicion || c.IdCategoria != idCategoriaEdicion)
+                .Select(c => c.Nombre)
+                .ToListAsync();
 
-                bool nombreDuplicado = await db.Categoria.AnyAsync(c =>
-                    c.Nombre == nombre &&
-                    (!esEdicion || c.IdCategoria != idCategoriaEdicion));
+            if (nombres.Any(n => Normalizar(n) == Normalizar(nombre)))
+            {
+                error = "Ya existe una categoría con ese nombre.";
+                return;
+            }
 
-                if (nombreDuplicado)
-                {
-                    error = "Ya existe una categoría con ese nombre.";
-                    return;
-                }
+            
 
             if (esEdicion && idCategoriaEdicion.HasValue)
             {
@@ -365,6 +367,15 @@ else
         {
             guardando = false;
         }
+    }
+
+    private static string Normalizar(string texto)
+    {
+    return new string(texto.Trim()
+        .Normalize(System.Text.NormalizationForm.FormD)
+        .Where(c => System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c)
+            != System.Globalization.UnicodeCategory.NonSpacingMark)
+        .ToArray()).ToUpperInvariant();
     }
 
     private async Task EliminarCategoria(int id)
@@ -429,6 +440,8 @@ else
         formulario = new FormularioCategoria();
         idCategoriaEdicion = null;
         esEdicion = false;
+        error = null;
+        mensaje = null;
     }
 
     private static string? LimpiarDescripcion(string? descripcion)

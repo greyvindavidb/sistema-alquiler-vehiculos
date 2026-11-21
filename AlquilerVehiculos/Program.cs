@@ -1,7 +1,11 @@
+
 using System.Security.Claims;
 using System.Threading.RateLimiting;
+using AlquilerVehiculos.Services;
+
 using AlquilerVehiculos.Components;
 using AlquilerVehiculos.Data;
+
 using AlquilerVehiculos.Models;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -9,6 +13,7 @@ using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -72,6 +77,16 @@ builder.Services.AddDbContextFactory<AlquilerDbContext>(
     options => options.UseSqlServer(
         builder.Configuration.GetConnectionString("AlquilerDb")),
     ServiceLifetime.Scoped);
+
+
+// Add services to the container.
+builder.Services.AddRazorComponents()
+    .AddInteractiveServerComponents();
+
+builder.Services.AddDbContextFactory<AlquilerDbContext>(options =>
+    options.UseSqlServer(builder.Configuration.GetConnectionString("AlquilerDb")));
+
+builder.Services.AddScoped<MultaService>();
 
 var app = builder.Build();
 
