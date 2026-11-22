@@ -1,84 +1,79 @@
-﻿
-<div class="top-row ps-3 navbar navbar-dark">
-    <div class="container-fluid">
-        <a class="navbar-brand" href="">
-            <i class="bi bi-car-front-fill me-2"></i>
-            Alquiler de Vehículos
-        </a>
-    </div>
+ @using Microsoft.AspNetCore.Components.Authorization
+
+<div class="top-row sidebar-brand">
+    <a class="navbar-brand d-flex align-items-center gap-2" href="">
+        <span class="brand-icon"><i class="bi bi-car-front-fill"></i></span>
+        <span class="brand-copy"><strong>Alquiler de Vehículos</strong><small>Panel administrativo</small></span>
+    </a>
 </div>
 
-<input type="checkbox"
-       title="Navigation menu"
-       class="navbar-toggler" />
+<input type="checkbox" title="Mostrar u ocultar el menú" class="navbar-toggler" />
 
-<div class="nav-scrollable"
-     onclick="document.querySelector('.navbar-toggler').click()">
-
-    <nav class="flex-column">
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
-                <i class="bi bi-house-door-fill me-2"></i>
-                Inicio
-            </NavLink>
+<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
+    <nav class="flex-column px-3 pb-4">
+        <div class="nav-section">GENERAL</div>
+        <div class="nav-item">
+            <NavLink class="nav-link" href="" Match="NavLinkMatch.All"><i class="bi bi-grid-1x2-fill"></i><span>Inicio</span></NavLink>
         </div>
 
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="clientes">
-                <i class="bi bi-people-fill me-2"></i>
-                Clientes
-            </NavLink>
+        <div class="nav-section">ADMINISTRACIÓN</div>
+        <div class="nav-item">
+            <NavLink class="nav-link" href="clientes"><i class="bi bi-people-fill"></i><span>Clientes</span></NavLink>
+        </div>
+        <div class="nav-item">
+            <NavLink class="nav-link" href="categorias"><i class="bi bi-tags-fill"></i><span>Categorías</span></NavLink>
+        </div>
+        <div class="nav-item">
+            <NavLink class="nav-link" href="vehiculos"><i class="bi bi-car-front-fill"></i><span>Vehículos</span></NavLink>
+        </div>
+        <div class="nav-item">
+            <NavLink class="nav-link" href="sucursales"><i class="bi bi-geo-alt-fill"></i><span>Sucursales</span></NavLink>
         </div>
 
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="categorias">
-                <i class="bi bi-tags-fill me-2"></i>
-                Categorías
-            </NavLink>
-        </div>
+        <AuthorizeView Roles="Administrador">
+       <div class="nav-item">
+           <NavLink class="nav-link" href="usuarios"><i class="bi bi-person-gear"></i><span>Usuarios</span></NavLink>
+       </div>
+       </AuthorizeView>
 
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="vehiculos">
-                <i class="bi bi-car-front-fill me-2"></i>
-                Vehículos
-            </NavLink>
+        <div class="nav-section">OPERACIONES</div>
+        <div class="nav-item">
+            <NavLink class="nav-link" href="reservas"><i class="bi bi-calendar-plus-fill"></i><span>Reservas</span></NavLink>
         </div>
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="sucursales">
-                <i class="bi bi-geo-alt-fill me-2"></i>
-                Sucursales
-            </NavLink>
+        <div class="nav-item">
+            <NavLink class="nav-link" href="disponibilidad"><i class="bi bi-calendar-check-fill"></i><span>Disponibilidad</span></NavLink>
         </div>
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="reservas">
-                <i class="bi bi-calendar-plus-fill me-2"></i>
-                Reservas
-            </NavLink>
+        <div class="nav-item">
+            <NavLink class="nav-link" href="mantenimientos"><i class="bi bi-tools"></i><span>Mantenimientos</span></NavLink>
         </div>
-
         <div class="nav-item px-3">
-            <NavLink class="nav-link" href="disponibilidad">
-                <i class="bi bi-calendar-check-fill me-2"></i>
-                Disponibilidad
-            </NavLink>
+        <NavLink class="nav-link" href="cargos"><i class="bi bi-receipt-cutoff me-2"></i>Cargos adicionales</NavLink>
         </div>
-
+        <div class="nav-section">ANÁLISIS</div>
+        <div class="nav-item">
+            <NavLink class="nav-link" href="reportes"><i class="bi bi-bar-chart-fill"></i><span>Reportes</span></NavLink>
+        </div>
+        <div class="nav-section">CUENTA</div>
+        <div class="nav-item">
+            <form method="post" action="/auth/logout">
+                <AntiforgeryToken />
+                <button type="submit" class="nav-link w-100 text-start border-0 bg-transparent">
+                    <i class="bi bi-box-arrow-right"></i><span>Cerrar sesión</span>
+                </button>
+            </form>
+       </div>
         <div class="nav-item px-3">
             <NavLink class="nav-link" href="entrega-devolucion">
                 <i class="bi bi-arrow-left-right me-2"></i>
                 Entrega y devolución
             </NavLink>
         </div>
-
-        <div class="nav-item px-3">
+     <div class="nav-item px-3">
             <NavLink class="nav-link" href="multas">
                 <i class="bi bi-exclamation-triangle-fill me-2"></i>
                 Multas
             </NavLink>
-        </div>
+     </div>
 
         <div class="nav-item px-3">
             <NavLink class="nav-link" href="danos">
@@ -87,5 +82,5 @@
             </NavLink>
         </div>
 
-    </nav>
+ </nav>
 </div>
