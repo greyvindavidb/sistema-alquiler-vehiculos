@@ -1,0 +1,527 @@
+@page "/pagos"
+@rendermode InteractiveServer
+@attribute [Authorize]
+
+@using System.ComponentModel.DataAnnotations
+@using System.Data
+@using System.Security.Claims
+@using AlquilerVehiculos.Data
+@using AlquilerVehiculos.Models
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@using System.Globalization
+
+@inject IDbContextFactory<AlquilerDbContext> DbFactory
+
+<PageTitle>Pagos</PageTitle>
+
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4">
+        <div>
+            <h1 class="h3 fw-bold mb-1">
+                <i class="bi bi-cash-stack text-primary me-2"></i>Gestión de pagos
+            </h1>
+            <p class="text-secondary mb-0">Registra abonos, consulta los pagos de cada contrato y verifica su saldo.</p>
+        </div>
+        @if (autenticado && !cargando)
+        {
+            <button type="button" class="btn btn-primary" @onclick="NuevoPago"
+                    disabled="@(guardando || !HaySaldosPendientes || !metodos.Any(m => m.Activo))">
+                <i class="bi bi-plus-circle me-2"></i>Nuevo pago
+            </button>
+        }
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(mensaje))
+    {
+        <div class="alert alert-success" role="status">@mensaje</div>
+    }
+    @if (!string.IsNullOrWhiteSpace(error))
+    {
+        <div class="alert alert-danger" role="alert">@error</div>
+    }
+
+    @if (!autenticado)
+    {
+        <div class="alert alert-warning">Debes iniciar sesión para utilizar este módulo.</div>
+    }
+    else if (cargando)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Cargando pagos...</span>
+            </div>
+        </div>
+    }
+    else
+    {
+        @if (!metodos.Any(m => m.Activo))
+        {
+            <div class="alert alert-warning">
+                No hay métodos de pago activos. Configúralos antes de registrar pagos nuevos.
+            </div>
+        }
+
+        @if (mostrarNuevo)
+        {
+            <div class="card border-0 shadow-sm rounded-3 mb-4">
+                <div class="card-body p-4">
+                    <h2 class="h5 fw-bold mb-1">
+                        <i class="bi bi-plus-square text-primary me-2"></i>Registrar pago
+                    </h2>
+                    <p class="text-secondary small mb-4">
+                        Registra un abono recibido del cliente. Las aplicaciones de depósitos se registran desde el módulo Depósitos, no aquí.
+                    </p>
+                    <EditForm Model="@nuevo" OnValidSubmit="GuardarPago">
+                        <DataAnnotationsValidator />
+                        <ValidationSummary />
+                        <div class="row g-3">
+                            <div class="col-lg-6">
+                                <label class="form-label fw-semibold">Contrato *</label>
+                                <InputSelect class="form-select" @bind-Value="nuevo.IdContrato">
+                                    <option value="0">Seleccione un contrato</option>
+                                    @foreach (var contrato in contratos.Where(c => SaldoActual(c.IdContrato) > 0))
+                                    {
+                                        <option value="@contrato.IdContrato">
+                                            #@contrato.IdContrato — @contrato.IdClienteNavigation.Nombre @contrato.IdClienteNavigation.Apellido — @contrato.IdVehiculoNavigation.Matricula
+                                        </option>
+                                    }
+                                </InputSelect>
+                                <ValidationMessage For="@(() => nuevo.IdContrato)" />
+                                @if (nuevo.IdContrato > 0)
+                                {
+                                    <div class="small text-secondary mt-2">
+                                        Saldo pendiente: <strong class="text-dark">RD$ @SaldoActual(nuevo.IdContrato).ToString("N2")</strong>
+                                    </div>
+                                }
+                            </div>
+                            <div class="col-lg-6">
+                                <label class="form-label fw-semibold">Método de pago *</label>
+                                <InputSelect class="form-select" @bind-Value="nuevo.IdMetodoPago">
+                                    <option value="0">Seleccione un método</option>
+                                    @foreach (var metodo in metodos.Where(m => m.Activo))
+                                    {
+                                        <option value="@metodo.IdMetodoPago">@metodo.Nombre</option>
+                                    }
+                                </InputSelect>
+                                <ValidationMessage For="@(() => nuevo.IdMetodoPago)" />
+                            </div>
+                            <div class="col-lg-6">
+                                <label class="form-label fw-semibold">Monto recibido (RD$) *</label>
+                                <InputNumber class="form-control" @bind-Value="nuevo.Monto" min="0.01" step="0.01" />
+                                <ValidationMessage For="@(() => nuevo.Monto)" />
+                            </div>
+                            <div class="col-lg-6">
+                                <label class="form-label fw-semibold">Concepto</label>
+                                <InputText class="form-control" @bind-Value="nuevo.Concepto"
+                                           placeholder="Ej.: Abono del alquiler" maxlength="100" />
+                                <ValidationMessage For="@(() => nuevo.Concepto)" />
+                            </div>
+                        </div>
+                        <div class="d-flex flex-wrap gap-2 mt-4">
+                            <button type="submit" class="btn btn-primary" disabled="@guardando">
+                                <i class="bi bi-check-circle me-1"></i>@(guardando ? "Guardando..." : "Guardar pago")
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary" @onclick="Cancelar" disabled="@guardando">
+                                Cancelar
+                            </button>
+                        </div>
+                    </EditForm>
+                </div>
+            </div>
+        }
+
+        <div class="row g-3 mb-4">
+            <div class="col-md-4">
+                <div class="card border-0 shadow-sm rounded-3 h-100">
+                    <div class="card-body p-3 p-lg-4">
+                        <div class="small text-secondary mb-1">Total de pagos registrados</div>
+                        <div class="h4 fw-bold mb-0">RD$ @TotalPagosFiltrados.ToString("N2")</div>
+                        <div class="small text-secondary mt-1">Incluye garantías aplicadas</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card border-0 shadow-sm rounded-3 h-100">
+                    <div class="card-body p-3 p-lg-4">
+                        <div class="small text-secondary mb-1">Aplicaciones de depósitos</div>
+                        <div class="h4 fw-bold mb-0">RD$ @TotalAplicacionesFiltradas.ToString("N2")</div>
+                        <div class="small text-secondary mt-1">Ya incluidas en el total de pagos</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card border-0 shadow-sm rounded-3 h-100">
+                    <div class="card-body p-3 p-lg-4">
+                        <div class="small text-secondary mb-1">Saldo pendiente de contratos</div>
+                        <div class="h4 fw-bold mb-0">RD$ @TotalSaldoPendiente.ToString("N2")</div>
+                        <div class="small text-secondary mt-1">Alquiler + cargos − pagos</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card border-0 shadow-sm rounded-3">
+            <div class="card-body p-4 pb-3">
+                <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+                    <div>
+                        <h2 class="h5 fw-bold mb-1">
+                            <i class="bi bi-receipt text-primary me-2"></i>Pagos registrados
+                        </h2>
+                        <p class="text-secondary small mb-0">Historial de pagos normales y aplicaciones de depósitos.</p>
+                    </div>
+                    <span class="badge rounded-pill bg-primary-subtle text-primary px-3 py-2">
+                        Total: @PagosFiltrados.Count()
+                    </span>
+                </div>
+                <div class="row g-3 align-items-end">
+                    <div class="col-md-6 col-lg-4">
+                        <label class="form-label fw-semibold">Buscar cliente</label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-white">
+                                <i class="bi bi-search text-secondary"></i>
+                            </span>
+                            <input type="search" class="form-control"
+                                placeholder="Nombre, apellido o cédula..."
+                                @bind="filtroCliente"
+                                @bind:event="oninput" />
+                        </div>
+                    </div>
+
+                    <div class="col-md-6 col-lg-4">
+                        <label class="form-label fw-semibold">Filtrar por contrato</label>
+                        <InputSelect class="form-select" @bind-Value="filtroContrato">
+                            <option value="0">Todos los contratos</option>
+                            @foreach (var contrato in contratos)
+                            {
+                                <option value="@contrato.IdContrato">
+                                    Contrato #@contrato.IdContrato
+                                </option>
+                            }
+                        </InputSelect>
+                    </div>
+                </div>
+                @if (filtroContrato != 0 && saldos.TryGetValue(filtroContrato, out var resumen))
+                {
+                    <div class="bg-light rounded-3 p-3 mt-3 small d-flex flex-wrap gap-3">
+                        <span><strong>Alquiler:</strong> RD$ @resumen.TotalAlquiler.ToString("N2")</span>
+                        <span><strong>Cargos:</strong> RD$ @resumen.TotalCargos.ToString("N2")</span>
+                        <span><strong>Pagado:</strong> RD$ @resumen.TotalPagado.ToString("N2")</span>
+                        <span><strong>Saldo:</strong> RD$ @resumen.Saldo.GetValueOrDefault().ToString("N2")</span>
+                    </div>
+                }
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="ps-4">Pago / contrato</th>
+                            <th>Cliente / vehículo</th>
+                            <th>Origen</th>
+                            <th>Método</th>
+                            <th>Concepto</th>
+                            <th>Registrado por</th>
+                            <th>Fecha</th>
+                            <th class="text-end pe-4">Monto (RD$)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (!PagosFiltrados.Any())
+                        {
+                            <tr>
+                                <td colspan="8" class="text-center text-secondary py-4">No hay pagos registrados para mostrar.</td>
+                            </tr>
+                        }
+                        else
+                        {
+                            @foreach (var pago in PagosFiltrados)
+                            {
+                                <tr @key="pago.IdPago">
+                                    <td class="ps-4">
+                                        <strong>#@pago.IdPago</strong>
+                                        <div class="small text-secondary">Contrato #@pago.IdContrato</div>
+                                    </td>
+                                    <td>
+                                        @pago.IdContratoNavigation.IdClienteNavigation.Nombre @pago.IdContratoNavigation.IdClienteNavigation.Apellido
+                                        <div class="small text-secondary">@pago.IdContratoNavigation.IdVehiculoNavigation.Matricula</div>
+                                    </td>
+                                    <td>
+                                        @if (EsAplicacionDeposito(pago))
+                                        {
+                                            <span class="badge bg-info-subtle text-info-emphasis">Depósito aplicado</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-success-subtle text-success-emphasis">Pago recibido</span>
+                                        }
+                                    </td>
+                                    <td>@pago.IdMetodoPagoNavigation.Nombre</td>
+                                    <td>@(string.IsNullOrWhiteSpace(pago.Concepto) ? "—" : pago.Concepto)</td>
+                                    <td>@pago.IdUsuarioNavigation.NombreCompleto</td>
+                                    <td class="small">@pago.Fecha.ToString("dd/MM/yyyy HH:mm")</td>
+                                    <td class="text-end pe-4 fw-semibold">@pago.Monto.ToString("N2")</td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthenticationStateTask { get; set; }
+
+    private List<Contrato> contratos = new();
+    private List<MetodoPago> metodos = new();
+    private List<Pago> pagos = new();
+    private Dictionary<int, VwSaldoContrato> saldos = new();
+
+    private PagoFormulario nuevo = new();
+    private bool cargando = true;
+    private bool autenticado;
+    private bool guardando;
+    private bool mostrarNuevo;
+    private int? idUsuarioActual;
+    private int filtroContrato;
+
+    private string filtroCliente = string.Empty;
+
+    private static readonly CompareInfo ComparadorNombres =
+        CultureInfo.GetCultureInfo("es-DO").CompareInfo;
+
+   private bool CoincideCliente(int idContrato)
+    {
+        if (string.IsNullOrWhiteSpace(filtroCliente))
+            return true;
+
+        var busqueda = filtroCliente.Trim();
+        var cedulaBuscada = busqueda.Replace("-", "").Replace(" ", "");
+
+        return contratos.Any(c =>
+            c.IdContrato == idContrato &&
+            (
+                ComparadorNombres.IndexOf(
+                    $"{c.IdClienteNavigation.Nombre} {c.IdClienteNavigation.Apellido}",
+                    busqueda,
+                    CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace) >= 0
+                ||
+                c.IdClienteNavigation.Documento
+                    .Replace("-", "").Replace(" ", "")
+                    .Contains(cedulaBuscada)
+            ));
+    }
+    private string? mensaje;
+    private string? error;
+
+    private IEnumerable<Pago> PagosFiltrados =>
+        pagos.Where(p =>
+            (filtroContrato == 0 || p.IdContrato == filtroContrato) &&
+            CoincideCliente(p.IdContrato));
+    private decimal TotalPagosFiltrados => PagosFiltrados.Sum(p => p.Monto);
+    private decimal TotalAplicacionesFiltradas => PagosFiltrados.Where(EsAplicacionDeposito).Sum(p => p.Monto);
+    private decimal TotalSaldoPendiente => saldos.Values
+    .Where(s =>
+        (filtroContrato == 0 || s.IdContrato == filtroContrato) &&
+        CoincideCliente(s.IdContrato))
+    .Sum(s => Math.Max(0m, s.Saldo.GetValueOrDefault()));
+    private bool HaySaldosPendientes => saldos.Values.Any(s => s.Saldo.GetValueOrDefault() > 0m);
+
+    private decimal SaldoActual(int idContrato) =>
+        saldos.TryGetValue(idContrato, out var saldo) ? saldo.Saldo.GetValueOrDefault() : 0m;
+
+    // Coincide con el concepto que escribe Depositos.razor cuando aplica una garantía.
+    private static bool EsAplicacionDeposito(Pago pago) =>
+        pago.Concepto?.StartsWith("Aplicación depósito #", StringComparison.OrdinalIgnoreCase) == true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthenticationStateTask is null)
+        {
+            error = "No se pudo obtener la sesión. Comprueba la configuración de autenticación.";
+            cargando = false;
+            return;
+        }
+
+        var estado = await AuthenticationStateTask;
+        autenticado = estado.User.Identity?.IsAuthenticated == true;
+        if (int.TryParse(estado.User.FindFirstValue(ClaimTypes.NameIdentifier), out var id))
+            idUsuarioActual = id;
+
+        if (autenticado)
+            await CargarDatos();
+        cargando = false;
+    }
+
+    private async Task CargarDatos()
+    {
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            contratos = await db.Contrato.AsNoTracking()
+                .Include(c => c.IdClienteNavigation)
+                .Include(c => c.IdVehiculoNavigation)
+                .OrderByDescending(c => c.IdContrato)
+                .ToListAsync();
+
+            metodos = await db.MetodoPago.AsNoTracking()
+                .OrderBy(m => m.Nombre)
+                .ToListAsync();
+
+            pagos = await db.Pago.AsNoTracking()
+                .Include(p => p.IdContratoNavigation).ThenInclude(c => c.IdClienteNavigation)
+                .Include(p => p.IdContratoNavigation).ThenInclude(c => c.IdVehiculoNavigation)
+                .Include(p => p.IdMetodoPagoNavigation)
+                .Include(p => p.IdUsuarioNavigation)
+                .OrderByDescending(p => p.Fecha)
+                .ThenByDescending(p => p.IdPago)
+                .ToListAsync();
+
+            saldos = await db.VwSaldoContrato.AsNoTracking()
+                .ToDictionaryAsync(s => s.IdContrato);
+        }
+        catch (Exception)
+        {
+            error = "No fue posible cargar los pagos. Revisa la conexión a SQL Server.";
+        }
+    }
+
+    private void NuevoPago()
+    {
+        error = null;
+        mensaje = null;
+        nuevo = new PagoFormulario
+        {
+            IdContrato = filtroContrato != 0 && SaldoActual(filtroContrato) > 0m ? filtroContrato : 0,
+            Concepto = "Abono de alquiler"
+        };
+        mostrarNuevo = true;
+    }
+
+    private void Cancelar()
+    {
+        mostrarNuevo = false;
+        error = null;
+        mensaje = null;
+    }
+
+    private async Task GuardarPago()
+    {
+        if (!autenticado || guardando) return;
+        guardando = true;
+        mensaje = null;
+        error = null;
+        try
+        {
+            if (!idUsuarioActual.HasValue)
+            {
+                error = "No se pudo identificar al usuario que registra el pago.";
+                return;
+            }
+            if (nuevo.Monto <= 0m || nuevo.Monto > 9999999999.99m ||
+                decimal.Round(nuevo.Monto, 2) != nuevo.Monto)
+            {
+                error = "Introduce un monto válido, mayor que cero y con máximo dos decimales.";
+                return;
+            }
+            if (nuevo.Concepto?.Trim().StartsWith("Aplicación depósito #", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                error = "Las aplicaciones de depósitos deben registrarse desde el módulo Depósitos.";
+                return;
+            }
+
+            await using var db = await DbFactory.CreateDbContextAsync();
+            await using var transaccion = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
+
+            if (!await db.Contrato.AnyAsync(c => c.IdContrato == nuevo.IdContrato))
+            {
+                error = "Selecciona un contrato válido.";
+                return;
+            }
+            if (!await db.MetodoPago.AnyAsync(m => m.IdMetodoPago == nuevo.IdMetodoPago && m.Activo))
+            {
+                error = "Selecciona un método de pago activo.";
+                return;
+            }
+            if (!await db.Usuario.AnyAsync(u => u.IdUsuario == idUsuarioActual.Value && u.Activo))
+            {
+                error = "La cuenta de usuario ya no está activa.";
+                return;
+            }
+
+            var saldo = await db.VwSaldoContrato.AsNoTracking()
+                .Where(s => s.IdContrato == nuevo.IdContrato)
+                .Select(s => s.Saldo)
+                .FirstOrDefaultAsync();
+
+            if (!saldo.HasValue || saldo.Value <= 0)
+            {
+                error = "El contrato no tiene saldo pendiente.";
+                return;
+            }
+            if (nuevo.Monto > saldo.Value)
+            {
+                error = $"El monto supera el saldo pendiente de RD$ {saldo.Value:N2}.";
+                return;
+            }
+
+            var pago = new Pago
+            {
+                IdContrato = nuevo.IdContrato,
+                IdMetodoPago = nuevo.IdMetodoPago,
+                IdUsuario = idUsuarioActual.Value,
+                Monto = nuevo.Monto,
+                Concepto = string.IsNullOrWhiteSpace(nuevo.Concepto) ? "Abono de alquiler" : nuevo.Concepto.Trim(),
+                Fecha = DateTime.Now
+            };
+            db.Pago.Add(pago);
+            await db.SaveChangesAsync();
+
+            db.Auditoria.Add(new Auditoria
+            {
+                IdUsuario = idUsuarioActual.Value,
+                Accion = "INSERT",
+                TablaAfectada = "pago",
+                IdRegistro = pago.IdPago.ToString(),
+                Descripcion = $"Pago RD$ {pago.Monto:N2} en contrato #{pago.IdContrato}.",
+                ValorNuevo = $"Contrato={pago.IdContrato}; Método={pago.IdMetodoPago}; Monto={pago.Monto}; Concepto={pago.Concepto}",
+                FechaHora = DateTime.Now
+            });
+            await db.SaveChangesAsync();
+            await transaccion.CommitAsync();
+
+            mostrarNuevo = false;
+            mensaje = $"Pago #{pago.IdPago} registrado correctamente.";
+            await CargarDatos();
+        }
+        catch (DbUpdateException)
+        {
+            error = "No se pudo guardar el pago. Revisa los datos y vuelve a intentarlo.";
+        }
+        catch (Exception)
+        {
+            error = "No fue posible registrar el pago. No se confirmó la operación.";
+        }
+        finally
+        {
+            guardando = false;
+        }
+    }
+
+    private sealed class PagoFormulario
+    {
+        [Range(1, int.MaxValue, ErrorMessage = "Selecciona un contrato.")]
+        public int IdContrato { get; set; }
+
+        [Range(1, int.MaxValue, ErrorMessage = "Selecciona un método de pago.")]
+        public int IdMetodoPago { get; set; }
+
+        [Range(typeof(decimal), "0.01", "9999999999.99", ErrorMessage = "Indica un monto válido mayor que cero.")]
+        public decimal Monto { get; set; }
+
+        [StringLength(100, ErrorMessage = "El concepto admite hasta 100 caracteres.")]
+        public string? Concepto { get; set; }
+    }
+}
