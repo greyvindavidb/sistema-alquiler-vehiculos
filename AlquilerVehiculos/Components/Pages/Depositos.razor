@@ -1,0 +1,665 @@
+@page "/depositos"
+@rendermode InteractiveServer
+@attribute [Authorize]
+
+@using System.ComponentModel.DataAnnotations
+@using System.Data
+@using System.Globalization
+@using System.Security.Claims
+@using AlquilerVehiculos.Data
+@using AlquilerVehiculos.Models
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+
+@inject IDbContextFactory<AlquilerDbContext> DbFactory
+
+<PageTitle>Depósitos y garantías</PageTitle>
+
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4">
+        <div>
+            <h1 class="h3 fw-bold mb-1">
+                <i class="bi bi-shield-check text-primary me-2"></i>Gestión de depósitos y garantías
+            </h1>
+            <p class="text-secondary mb-0">Registra garantías, aplícalas a cargos y devuelve el monto no utilizado.</p>
+        </div>
+        @if (autenticado && !cargando)
+        {
+            <button type="button" class="btn btn-primary" @onclick="NuevoDeposito"
+                    disabled="@(guardando || !HayContratosElegibles || !metodos.Any(m => m.Activo))">
+                <i class="bi bi-plus-circle me-2"></i>Nuevo depósito
+            </button>
+        }
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(mensaje))
+    {
+        <div class="alert alert-success" role="status">@mensaje</div>
+    }
+    @if (!string.IsNullOrWhiteSpace(error))
+    {
+        <div class="alert alert-danger" role="alert">@error</div>
+    }
+
+    @if (!autenticado)
+    {
+        <div class="alert alert-warning">Debes iniciar sesión para utilizar este módulo.</div>
+    }
+    else if (cargando)
+    {
+        <p class="text-secondary">Cargando depósitos...</p>
+    }
+    else
+    {
+        @if (!HayContratosElegibles)
+        {
+            <div class="alert alert-info">
+                No hay contratos abiertos sin depósito. Cada contrato admite una sola garantía.
+            </div>
+        }
+        @if (!metodos.Any(m => m.Activo))
+        {
+            <div class="alert alert-warning">
+                No existen métodos de pago activos. Debes configurarlos antes de registrar un depósito.
+            </div>
+        }
+
+        @if (mostrarNuevo)
+        {
+            <div class="card border-0 shadow-sm rounded-3 mb-4">
+                <div class="card-body p-4">
+                    <h2 class="h5 fw-bold mb-1"><i class="bi bi-plus-square text-primary me-2"></i>Registrar depósito</h2>
+                    <p class="text-secondary small mb-4">La garantía queda retenida y no cuenta como ingreso ni reduce el saldo del contrato.</p>
+                    <EditForm Model="@nuevo" OnValidSubmit="GuardarDeposito">
+                        <DataAnnotationsValidator />
+                        <ValidationSummary />
+                        <div class="row g-3">
+                            <div class="col-lg-6">
+                                <label class="form-label fw-semibold">Contrato *</label>
+                                <InputSelect class="form-select" @bind-Value="nuevo.IdContrato">
+                                    <option value="0">Seleccione un contrato</option>
+                                    @foreach (var contrato in contratos.Where(c => c.Estado == "abierto" && !depositos.Any(d => d.IdContrato == c.IdContrato)))
+                                    {
+                                        <option value="@contrato.IdContrato">
+                                            #@contrato.IdContrato — @contrato.IdClienteNavigation.Nombre @contrato.IdClienteNavigation.Apellido — @contrato.IdVehiculoNavigation.Matricula
+                                        </option>
+                                    }
+                                </InputSelect>
+                                <ValidationMessage For="@(() => nuevo.IdContrato)" />
+                            </div>
+                            <div class="col-lg-6">
+                                <label class="form-label fw-semibold">Método de pago *</label>
+                                <InputSelect class="form-select" @bind-Value="nuevo.IdMetodoPago">
+                                    <option value="0">Seleccione un método</option>
+                                    @foreach (var metodo in metodos.Where(m => m.Activo))
+                                    {
+                                        <option value="@metodo.IdMetodoPago">@metodo.Nombre</option>
+                                    }
+                                </InputSelect>
+                                <ValidationMessage For="@(() => nuevo.IdMetodoPago)" />
+                            </div>
+                            <div class="col-lg-6">
+                                <label class="form-label fw-semibold">Monto de la garantía (RD$) *</label>
+                                <InputNumber class="form-control" @bind-Value="nuevo.Monto" min="0.01" step="0.01" />
+                                <ValidationMessage For="@(() => nuevo.Monto)" />
+                            </div>
+                            <div class="col-lg-6">
+                                <label class="form-label fw-semibold">Estado inicial</label>
+                                <input class="form-control" value="Retenido" disabled />
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label fw-semibold">Observaciones</label>
+                                <InputTextArea class="form-control" @bind-Value="nuevo.Observaciones" maxlength="200" rows="2" />
+                                <ValidationMessage For="@(() => nuevo.Observaciones)" />
+                            </div>
+                        </div>
+                        <div class="d-flex gap-2 mt-4">
+                            <button type="submit" class="btn btn-primary" disabled="@guardando">
+                                <i class="bi bi-check-circle me-1"></i>@(guardando ? "Guardando..." : "Guardar depósito")
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary" @onclick="CancelarFormularios" disabled="@guardando">Cancelar</button>
+                        </div>
+                    </EditForm>
+                </div>
+            </div>
+        }
+
+        @if (idAplicando.HasValue)
+        {
+            var seleccionado = depositos.FirstOrDefault(d => d.IdDeposito == idAplicando.Value);
+            @if (seleccionado is not null)
+            {
+                <div class="card border-0 shadow-sm rounded-3 mb-4">
+                    <div class="card-body p-4">
+                        <h2 class="h5 fw-bold mb-2"><i class="bi bi-arrow-left-right text-primary me-2"></i>Aplicar depósito a cargos</h2>
+                        <p class="text-secondary small">
+                            Depósito #@seleccionado.IdDeposito del contrato #@seleccionado.IdContrato.
+                            Disponible: <strong>RD$ @Disponible(seleccionado).ToString("N2")</strong>.
+                            Solo puede aplicarse a cargos del contrato que aún tengan saldo.
+                        </p>
+                        <EditForm Model="@aplicacion" OnValidSubmit="GuardarAplicacion">
+                            <DataAnnotationsValidator />
+                            <ValidationSummary />
+                            <div class="row g-3">
+                                <div class="col-md-5">
+                                    <label class="form-label fw-semibold">Monto a aplicar (RD$) *</label>
+                                    <InputNumber class="form-control" @bind-Value="aplicacion.Monto" min="0.01" step="0.01" />
+                                    <ValidationMessage For="@(() => aplicacion.Monto)" />
+                                </div>
+                            </div>
+                            <div class="alert alert-info mt-3 mb-0 small">
+                                Al aplicar el depósito, se genera un pago identificado como aplicación de garantía.
+                                Así disminuye el saldo del contrato y el dinero aplicado deja de estar retenido.
+                            </div>
+                            <div class="d-flex gap-2 mt-3">
+                                <button type="submit" class="btn btn-primary" disabled="@guardando">
+                                    <i class="bi bi-check-circle me-1"></i>Confirmar aplicación
+                                </button>
+                                <button type="button" class="btn btn-outline-secondary" @onclick="CancelarFormularios" disabled="@guardando">Cancelar</button>
+                            </div>
+                        </EditForm>
+                    </div>
+                </div>
+            }
+        }
+
+        @if (idDevolviendo.HasValue)
+        {
+            var seleccionado = depositos.FirstOrDefault(d => d.IdDeposito == idDevolviendo.Value);
+            @if (seleccionado is not null)
+            {
+                <div class="card border-0 shadow-sm rounded-3 mb-4">
+                    <div class="card-body p-4">
+                        <h2 class="h5 fw-bold mb-2"><i class="bi bi-cash-coin text-primary me-2"></i>Confirmar devolución</h2>
+                        <p>¿Confirmas que se devolvieron <strong>RD$ @Disponible(seleccionado).ToString("N2")</strong> al cliente del contrato #@seleccionado.IdContrato?</p>
+                        <p class="text-secondary small mb-3">Esta acción marca la garantía como devuelta. No genera un pago ni modifica el saldo del contrato.</p>
+                        <div class="d-flex gap-2">
+                            <button type="button" class="btn btn-primary" @onclick="ConfirmarDevolucion" disabled="@guardando">Confirmar devolución</button>
+                            <button type="button" class="btn btn-outline-secondary" @onclick="CancelarFormularios" disabled="@guardando">Cancelar</button>
+                        </div>
+                    </div>
+                </div>
+            }
+        }
+
+        <div class="card border-0 shadow-sm rounded-3">
+            <div class="card-body p-4 pb-3">
+                <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+                    <div>
+                        <h2 class="h5 fw-bold mb-1"><i class="bi bi-journal-text text-primary me-2"></i>Depósitos registrados</h2>
+                        <p class="small text-secondary mb-0">Historial de garantías y sus movimientos.</p>
+                    </div>
+                    <span class="badge rounded-pill bg-primary-subtle text-primary px-3 py-2">
+                        Mostrando: @DepositosFiltrados.Count() de @depositos.Count
+                    </span>
+                </div>
+                <div class="row g-3 align-items-end">
+                    <div class="col-md-6 col-lg-4">
+                        <label class="form-label fw-semibold" for="buscar-cliente-deposito">Buscar cliente</label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-white"><i class="bi bi-search text-secondary"></i></span>
+                            <input id="buscar-cliente-deposito" type="search" class="form-control"
+                                   placeholder="Nombre, apellido o cédula..."
+                                   @bind="filtroCliente" @bind:event="oninput" />
+                        </div>
+                    </div>
+                    <div class="col-md-6 col-lg-4">
+                        <label class="form-label fw-semibold">Filtrar por contrato</label>
+                        <InputSelect class="form-select" @bind-Value="filtroContrato">
+                            <option value="0">Todos los contratos</option>
+                            @foreach (var contrato in contratos)
+                            {
+                                <option value="@contrato.IdContrato">Contrato #@contrato.IdContrato</option>
+                            }
+                        </InputSelect>
+                    </div>
+                </div>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="ps-4">Depósito / contrato</th>
+                            <th>Cliente / vehículo</th>
+                            <th>Método</th>
+                            <th class="text-end">Monto (RD$)</th>
+                            <th class="text-end">Aplicado</th>
+                            <th class="text-end">Disponible</th>
+                            <th>Estado</th>
+                            <th>Fecha</th>
+                            <th class="text-end pe-4">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (!DepositosFiltrados.Any())
+                        {
+                            <tr><td colspan="9" class="text-center text-secondary py-4">No hay depósitos para mostrar.</td></tr>
+                        }
+                        else
+                        {
+                            @foreach (var deposito in DepositosFiltrados)
+                            {
+                                <tr @key="deposito.IdDeposito">
+                                    <td class="ps-4"><strong>#@deposito.IdDeposito</strong><div class="small text-secondary">Contrato #@deposito.IdContrato</div></td>
+                                    <td>@deposito.IdContratoNavigation.IdClienteNavigation.Nombre @deposito.IdContratoNavigation.IdClienteNavigation.Apellido
+                                        <div class="small text-secondary">@deposito.IdContratoNavigation.IdVehiculoNavigation.Matricula</div></td>
+                                    <td>@deposito.IdMetodoPagoNavigation.Nombre</td>
+                                    <td class="text-end fw-semibold">@deposito.Monto.ToString("N2")</td>
+                                    <td class="text-end">@deposito.MontoAplicado.ToString("N2")</td>
+                                    <td class="text-end">@RetenidoDisponible(deposito).ToString("N2")</td>
+                                    <td>
+                                        @if (deposito.Estado == "retenido")
+                                        {
+                                            <span class="badge bg-warning-subtle text-warning-emphasis">Retenido</span>
+                                        }
+                                        else if (deposito.Estado == "aplicado")
+                                        {
+                                            <span class="badge bg-info-subtle text-info-emphasis">Aplicado</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-success-subtle text-success-emphasis">Devuelto</span>
+                                        }
+                                    </td>
+                                    <td><span class="small">@deposito.Fecha.ToString("dd/MM/yyyy HH:mm")</span></td>
+                                    <td class="text-end pe-4">
+                                        @if (deposito.Estado == "retenido")
+                                        {
+                                            <div class="d-flex justify-content-end gap-1 flex-wrap">
+                                                <button type="button" class="btn btn-sm btn-outline-primary" disabled="@guardando"
+                                                        @onclick="() => PrepararAplicacion(deposito.IdDeposito)">Aplicar</button>
+                                                <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@guardando"
+                                                        @onclick="() => PrepararDevolucion(deposito.IdDeposito)">Devolver</button>
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-secondary small">Finalizado</span>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthenticationStateTask { get; set; }
+
+    private List<Contrato> contratos = new();
+    private List<Deposito> depositos = new();
+    private List<MetodoPago> metodos = new();
+    private DepositoFormulario nuevo = new();
+    private AplicacionFormulario aplicacion = new();
+
+    private bool autenticado;
+    private bool cargando = true;
+    private bool guardando;
+    private bool mostrarNuevo;
+    private int? idAplicando;
+    private int? idDevolviendo;
+    private int? idUsuarioActual;
+    private int filtroContrato;
+    private string filtroCliente = string.Empty;
+    private string? mensaje;
+    private string? error;
+
+    private bool HayContratosElegibles => contratos.Any(c =>
+        c.Estado == "abierto" && !depositos.Any(d => d.IdContrato == c.IdContrato));
+
+    // El filtro se aplica al historial completo: un cliente puede tener varios contratos.
+    // La búsqueda ignora mayúsculas y tildes y se actualiza mientras se escribe.
+    private static readonly CompareInfo ComparadorNombres = CultureInfo.GetCultureInfo("es-DO").CompareInfo;
+
+    private IEnumerable<Deposito> DepositosFiltrados => depositos.Where(d =>
+    {
+        if (filtroContrato != 0 && d.IdContrato != filtroContrato)
+            return false;
+
+        if (string.IsNullOrWhiteSpace(filtroCliente))
+            return true;
+
+        var busqueda = filtroCliente.Trim();
+        var cedulaBuscada = busqueda.Replace("-", "").Replace(" ", "");
+        var cliente = d.IdContratoNavigation.IdClienteNavigation;
+
+        return ComparadorNombres.IndexOf(
+            $"{cliente.Nombre} {cliente.Apellido}",
+            busqueda,
+            CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace) >= 0
+            ||
+            (cedulaBuscada.Length > 0 &&
+            cliente.Documento.Replace("-", "").Replace(" ", "")
+                .Contains(cedulaBuscada));
+    });
+
+    private static decimal Disponible(Deposito deposito) => deposito.Monto - deposito.MontoAplicado;
+
+    private static decimal RetenidoDisponible(Deposito deposito) =>
+        deposito.Estado == "retenido" ? Disponible(deposito) : 0m;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthenticationStateTask is null)
+        {
+            error = "No está disponible el estado de autenticación. Revisa Routes.razor.";
+            cargando = false;
+            return;
+        }
+
+        var estado = await AuthenticationStateTask;
+        autenticado = estado.User.Identity?.IsAuthenticated == true;
+        if (int.TryParse(estado.User.FindFirstValue(ClaimTypes.NameIdentifier), out var usuarioId))
+            idUsuarioActual = usuarioId;
+
+        if (autenticado)
+            await CargarDatos();
+        cargando = false;
+    }
+
+    private async Task CargarDatos()
+    {
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            contratos = await db.Contrato.AsNoTracking()
+                .Include(c => c.IdClienteNavigation)
+                .Include(c => c.IdVehiculoNavigation)
+                .OrderByDescending(c => c.IdContrato).ToListAsync();
+
+            metodos = await db.MetodoPago.AsNoTracking()
+                .OrderBy(m => m.Nombre).ToListAsync();
+
+            depositos = await db.Deposito.AsNoTracking()
+                .Include(d => d.IdMetodoPagoNavigation)
+                .Include(d => d.IdContratoNavigation).ThenInclude(c => c.IdClienteNavigation)
+                .Include(d => d.IdContratoNavigation).ThenInclude(c => c.IdVehiculoNavigation)
+                .OrderByDescending(d => d.Fecha)
+                .ThenByDescending(d => d.IdDeposito).ToListAsync();
+        }
+        catch (Exception)
+        {
+            error = "No fue posible cargar los depósitos. Revisa la conexión a SQL Server.";
+        }
+    }
+
+    private void CancelarFormularios()
+    {
+        mostrarNuevo = false;
+        idAplicando = null;
+        idDevolviendo = null;
+        error = null;
+    }
+
+    private void NuevoDeposito()
+    {
+        CancelarFormularios();
+        mensaje = null;
+        nuevo = new DepositoFormulario();
+        mostrarNuevo = true;
+    }
+
+    private void PrepararAplicacion(int id)
+    {
+        CancelarFormularios();
+        mensaje = null;
+        var deposito = depositos.FirstOrDefault(d => d.IdDeposito == id);
+        if (deposito is null || deposito.Estado != "retenido") return;
+        aplicacion = new AplicacionFormulario();
+        idAplicando = id;
+    }
+
+    private void PrepararDevolucion(int id)
+    {
+        CancelarFormularios();
+        mensaje = null;
+        if (depositos.Any(d => d.IdDeposito == id && d.Estado == "retenido" && Disponible(d) > 0))
+            idDevolviendo = id;
+    }
+
+    private async Task GuardarDeposito()
+    {
+        if (!autenticado || guardando) return;
+        guardando = true;
+        error = null;
+        mensaje = null;
+        try
+        {
+            if (nuevo.Monto <= 0 || nuevo.Monto > 99999999.99m)
+            {
+                error = "El monto debe estar entre RD$ 0.01 y RD$ 99,999,999.99.";
+                return;
+            }
+
+            await using var db = await DbFactory.CreateDbContextAsync();
+            await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
+
+            var contrato = await db.Contrato.FirstOrDefaultAsync(c => c.IdContrato == nuevo.IdContrato);
+            if (contrato is null || contrato.Estado != "abierto")
+            {
+                error = "Selecciona un contrato abierto válido.";
+                return;
+            }
+            if (await db.Deposito.AnyAsync(d => d.IdContrato == nuevo.IdContrato))
+            {
+                error = "Ese contrato ya tiene un depósito registrado.";
+                return;
+            }
+            if (!await db.MetodoPago.AnyAsync(m => m.IdMetodoPago == nuevo.IdMetodoPago && m.Activo))
+            {
+                error = "Selecciona un método de pago activo.";
+                return;
+            }
+
+            var deposito = new Deposito
+            {
+                IdContrato = nuevo.IdContrato,
+                IdMetodoPago = nuevo.IdMetodoPago,
+                Monto = nuevo.Monto,
+                MontoAplicado = 0m,
+                Estado = "retenido",
+                Fecha = DateTime.Now,
+                FechaResolucion = null,
+                Observaciones = string.IsNullOrWhiteSpace(nuevo.Observaciones) ? null : nuevo.Observaciones.Trim()
+            };
+
+            db.Deposito.Add(deposito);
+            await db.SaveChangesAsync();
+            Auditar(db, "INSERT", "deposito", deposito.IdDeposito.ToString(),
+                $"Registro de garantía RD$ {deposito.Monto:N2} para contrato #{deposito.IdContrato}.");
+            await db.SaveChangesAsync();
+            await tx.CommitAsync();
+
+            CancelarFormularios();
+            mensaje = $"Depósito #{deposito.IdDeposito} registrado correctamente.";
+            await CargarDatos();
+        }
+        catch (DbUpdateException)
+        {
+            error = "No se pudo guardar. Comprueba que el contrato no tenga ya un depósito y que los datos sean válidos.";
+        }
+        catch (Exception)
+        {
+            error = "No se pudo registrar el depósito. La operación no se confirmó.";
+        }
+        finally
+        {
+            guardando = false;
+        }
+    }
+
+    private async Task GuardarAplicacion()
+    {
+        if (!autenticado || guardando || !idAplicando.HasValue) return;
+        guardando = true;
+        error = null;
+        mensaje = null;
+        try
+        {
+            if (!idUsuarioActual.HasValue)
+            {
+                error = "No fue posible identificar al usuario de la sesión.";
+                return;
+            }
+            if (aplicacion.Monto <= 0)
+            {
+                error = "Indica un monto mayor que cero.";
+                return;
+            }
+
+            await using var db = await DbFactory.CreateDbContextAsync();
+            await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
+            var deposito = await db.Deposito.FirstOrDefaultAsync(d => d.IdDeposito == idAplicando.Value);
+            if (deposito is null || deposito.Estado != "retenido")
+            {
+                error = "Este depósito ya fue resuelto o no existe.";
+                return;
+            }
+
+            var cargos = await db.Cargo.Where(c => c.IdContrato == deposito.IdContrato)
+                .SumAsync(c => (decimal?)c.Monto) ?? 0m;
+            var saldo = await db.VwSaldoContrato
+                .Where(s => s.IdContrato == deposito.IdContrato)
+                .Select(s => s.Saldo).FirstOrDefaultAsync();
+            if (!saldo.HasValue)
+            {
+                error = "No fue posible consultar el saldo del contrato.";
+                return;
+            }
+
+            // Se aplica únicamente hasta el saldo pendiente, el total de cargos no
+            // cubierto por aplicaciones anteriores y el dinero aún retenido.
+            var limite = Math.Min(
+                Math.Min(Disponible(deposito), Math.Max(0m, cargos - deposito.MontoAplicado)),
+                Math.Max(0m, saldo.Value));
+
+            if (aplicacion.Monto > limite)
+            {
+                error = $"Puedes aplicar como máximo RD$ {limite:N2}, según los cargos, el saldo y la garantía disponible.";
+                return;
+            }
+
+            // Al aplicarse, la garantía se convierte en pago y reduce el saldo.
+            var pago = new Pago
+            {
+                IdContrato = deposito.IdContrato,
+                IdMetodoPago = deposito.IdMetodoPago,
+                IdUsuario = idUsuarioActual.Value,
+                Monto = aplicacion.Monto,
+                Fecha = DateTime.Now,
+                Concepto = $"Aplicación depósito #{deposito.IdDeposito} a cargos"
+            };
+            db.Pago.Add(pago);
+            deposito.MontoAplicado += aplicacion.Monto;
+            if (Disponible(deposito) == 0m)
+            {
+                deposito.Estado = "aplicado";
+                deposito.FechaResolucion = DateTime.Now;
+            }
+            await db.SaveChangesAsync();
+
+            Auditar(db, "UPDATE", "deposito", deposito.IdDeposito.ToString(),
+                $"Aplicados RD$ {aplicacion.Monto:N2} a cargos del contrato #{deposito.IdContrato}. Acumulado: RD$ {deposito.MontoAplicado:N2}.");
+            Auditar(db, "INSERT", "pago", pago.IdPago.ToString(),
+                $"Pago #{pago.IdPago} por aplicación del depósito #{deposito.IdDeposito}.");
+            await db.SaveChangesAsync();
+            await tx.CommitAsync();
+
+            CancelarFormularios();
+            mensaje = $"Se aplicaron RD$ {aplicacion.Monto:N2} del depósito a los cargos del contrato.";
+            await CargarDatos();
+        }
+        catch (DbUpdateException)
+        {
+            error = "No se pudo aplicar el depósito. Comprueba los datos y vuelve a intentarlo.";
+        }
+        catch (Exception)
+        {
+            error = "Ocurrió un error al aplicar el depósito. No se confirmó el movimiento.";
+        }
+        finally
+        {
+            guardando = false;
+        }
+    }
+
+    private async Task ConfirmarDevolucion()
+    {
+        if (!autenticado || guardando || !idDevolviendo.HasValue) return;
+        guardando = true;
+        error = null;
+        mensaje = null;
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
+            var deposito = await db.Deposito.FirstOrDefaultAsync(d => d.IdDeposito == idDevolviendo.Value);
+            if (deposito is null || deposito.Estado != "retenido" || Disponible(deposito) <= 0)
+            {
+                error = "La garantía ya está resuelta o no tiene un monto disponible.";
+                return;
+            }
+
+            var devuelto = Disponible(deposito);
+            deposito.Estado = "devuelto";
+            deposito.FechaResolucion = DateTime.Now;
+            await db.SaveChangesAsync();
+            Auditar(db, "UPDATE", "deposito", deposito.IdDeposito.ToString(),
+                $"Devolución de RD$ {devuelto:N2} del contrato #{deposito.IdContrato}. Aplicado previamente: RD$ {deposito.MontoAplicado:N2}.");
+            await db.SaveChangesAsync();
+            await tx.CommitAsync();
+
+            CancelarFormularios();
+            mensaje = $"Devolución de RD$ {devuelto:N2} registrada correctamente.";
+            await CargarDatos();
+        }
+        catch (Exception)
+        {
+            error = "No fue posible registrar la devolución del depósito.";
+        }
+        finally
+        {
+            guardando = false;
+        }
+    }
+
+    private void Auditar(AlquilerDbContext db, string accion, string tabla, string registro, string descripcion)
+    {
+        db.Auditoria.Add(new Auditoria
+        {
+            IdUsuario = idUsuarioActual,
+            Accion = accion,
+            TablaAfectada = tabla,
+            IdRegistro = registro,
+            Descripcion = descripcion,
+            ValorNuevo = descripcion,
+            FechaHora = DateTime.Now
+        });
+    }
+
+    private sealed class DepositoFormulario
+    {
+        [Range(1, int.MaxValue, ErrorMessage = "Debes seleccionar un contrato.")]
+        public int IdContrato { get; set; }
+
+        [Range(1, int.MaxValue, ErrorMessage = "Debes seleccionar un método de pago.")]
+        public int IdMetodoPago { get; set; }
+
+        [Range(typeof(decimal), "0.01", "99999999.99", ErrorMessage = "Introduce un monto válido mayor que cero.")]
+        public decimal Monto { get; set; }
+
+        [StringLength(200, ErrorMessage = "Las observaciones admiten hasta 200 caracteres.")]
+        public string? Observaciones { get; set; }
+    }
+
+    private sealed class AplicacionFormulario
+    {
+        [Range(typeof(decimal), "0.01", "99999999.99", ErrorMessage = "Introduce un monto válido mayor que cero.")]
+        public decimal Monto { get; set; }
+    }
+}
