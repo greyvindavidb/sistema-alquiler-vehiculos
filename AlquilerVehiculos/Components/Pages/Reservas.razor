@@ -1,3 +1,4 @@
+
 @page "/reservas"
 @rendermode InteractiveServer
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
@@ -22,381 +23,535 @@
         </p>
     </div>
 
-    @if (!string.IsNullOrWhiteSpace(mensaje))
-    {
-        <div class="alert @(mensajeError ? "alert-danger" : "alert-success") shadow-sm border-0 rounded-3" role="alert">
-            <i class="bi @(mensajeError ? "bi-exclamation-triangle-fill" : "bi-check-circle-fill") me-2"></i>
-            @mensaje
-        </div>
-    }
+    <!-- Pestañas -->
+    <div class="d-flex flex-wrap gap-2 mb-4">
+        <button type="button"
+                class="btn @(MostrarDisponibilidad ? "btn-outline-primary" : "btn-primary")"
+                @onclick="() => MostrarDisponibilidad = false">
+            <i class="bi bi-calendar-check me-2"></i>
+            Gestión de reservas
+        </button>
 
-    @if (Cargando)
-    {
-        <div class="card border-0 shadow-sm rounded-3">
-            <div class="card-body text-center py-5">
-                <div class="spinner-border text-primary" role="status">
-                    <span class="visually-hidden">Cargando...</span>
-                </div>
-                <p class="text-secondary mt-3 mb-0">
-                    Cargando información de reservas...
-                </p>
-            </div>
-        </div>
-    }
-    else
-    {
-        @if (clientes.Count == 0 ||
-             categorias.Count == 0 ||
-             sucursales.Count == 0 ||
-             usuarios.Count == 0)
-        {
-            <div class="alert alert-warning border-0 shadow-sm rounded-3" role="alert">
-                <div class="d-flex align-items-start">
-                    <i class="bi bi-exclamation-triangle-fill me-2 mt-1"></i>
-                    <div>
-                        <strong>Faltan datos para registrar reservas.</strong>
-                        <p class="mb-1">
-                            Debes tener al menos un cliente activo, una categoría,
-                            una sucursal activa y un usuario activo.
-                        </p>
-                        <p class="mb-0">
-                            También necesitas vehículos activos en la categoría seleccionada.
-                            Cuando agregues los datos que faltan, podrás registrar reservas.
-                        </p>
-                    </div>
-                </div>
-            </div>
-        }
+        <button type="button"
+                class="btn @(MostrarDisponibilidad ? "btn-primary" : "btn-outline-primary")"
+                @onclick="() => MostrarDisponibilidad = true">
+            <i class="bi bi-search me-2"></i>
+            Disponibilidad
+        </button>
+    </div>
 
+    @if (MostrarDisponibilidad)
+    {
+        <!-- CONSULTA DE DISPONIBILIDAD -->
         <div class="card border-0 shadow-sm rounded-3 mb-4">
-            <div class="card-header bg-white border-0 px-4 pt-4">
+            <div class="card-header bg-white border-0 p-4">
                 <h2 class="h5 fw-bold mb-1">
-                    @if (formulario.IdReserva == 0)
-                    {
-                        <i class="bi bi-calendar-plus text-primary me-2"></i>
-                        <span>Registrar reserva</span>
-                    }
-                    else
-                    {
-                        <i class="bi bi-pencil-square text-primary me-2"></i>
-                        <span>Modificar reserva</span>
-                    }
+                    <i class="bi bi-calendar-check-fill text-primary me-2"></i>
+                    Consultar disponibilidad de vehículos
                 </h2>
                 <p class="text-secondary small mb-0">
-                    Complete los datos solicitados para gestionar la reserva.
+                    Consulta los vehículos disponibles según la categoría y el período de alquiler.
                 </p>
             </div>
 
             <div class="card-body p-4">
-                <EditForm Model="formulario" OnValidSubmit="GuardarReservaAsync">
-                    <div class="row g-3">
+                <div class="row g-3">
 
-                        <div class="col-12 col-md-6">
-                            <label class="form-label fw-semibold">
-                                Cliente <span class="text-danger">*</span>
-                            </label>
-                            <InputSelect class="form-select" @bind-Value="formulario.IdCliente">
-                                <option value="0">Seleccione un cliente</option>
-                                @foreach (var cliente in clientes.Where(c =>
-                                    string.Equals(c.Estado, "activo",
-                                    StringComparison.OrdinalIgnoreCase)))
-                                {
-                                    <option value="@cliente.IdCliente">
-                                        @cliente.Nombre @cliente.Apellido — @cliente.Documento
-                                    </option>
-                                }
-                            </InputSelect>
-                        </div>
-
-                        <div class="col-12 col-md-6">
-                            <label class="form-label fw-semibold">
-                                Categoría <span class="text-danger">*</span>
-                            </label>
-                            <InputSelect class="form-select"
-                                         @bind-Value="formulario.IdCategoria"
-                                         @bind-Value:after="ActualizarVehiculosDisponiblesAsync">
-                                <option value="0">Seleccione una categoría</option>
-                                @foreach (var categoria in categorias)
-                                {
-                                    <option value="@categoria.IdCategoria">
-                                        @categoria.Nombre
-                                    </option>
-                                }
-                            </InputSelect>
-                        </div>
-
-                        <div class="col-12 col-md-6">
-                            <label class="form-label fw-semibold">
-                                Sucursal <span class="text-danger">*</span>
-                            </label>
-                            <InputSelect class="form-select" @bind-Value="formulario.IdSucursal">
-                                <option value="0">Seleccione una sucursal</option>
-                                @foreach (var sucursal in sucursales.Where(s => s.Activa))
-                                {
-                                    <option value="@sucursal.IdSucursal">
-                                        @sucursal.Nombre
-                                    </option>
-                                }
-                            </InputSelect>
-                        </div>
-
-                        <div class="col-12 col-md-6">
-                            <label class="form-label fw-semibold">
-                                Usuario que registra <span class="text-danger">*</span>
-                            </label>
-                            <InputSelect class="form-select" @bind-Value="formulario.IdUsuario">
-                                <option value="0">Seleccione un usuario</option>
-                                @foreach (var usuario in usuarios.Where(u => u.Activo))
-                                {
-                                    <option value="@usuario.IdUsuario">
-                                        @usuario.NombreCompleto
-                                    </option>
-                                }
-                            </InputSelect>
-                        </div>
-
-                        <div class="col-12 col-md-6">
-                            <label class="form-label fw-semibold">
-                                <i class="bi bi-calendar-event text-secondary me-1"></i>
-                                Fecha de inicio <span class="text-danger">*</span>
-                            </label>
-                            <InputDate class="form-control"
-                                       @bind-Value="formulario.FechaInicio"
-                                       @bind-Value:after="ActualizarVehiculosDisponiblesAsync" />
-                        </div>
-
-                        <div class="col-12 col-md-6">
-                            <label class="form-label fw-semibold">
-                                <i class="bi bi-calendar-event text-secondary me-1"></i>
-                                Fecha de finalización <span class="text-danger">*</span>
-                            </label>
-                            <InputDate class="form-control"
-                                       @bind-Value="formulario.FechaFin"
-                                       @bind-Value:after="ActualizarVehiculosDisponiblesAsync" />
-                        </div>
-
-                        <div class="col-12">
-                            <label class="form-label fw-semibold">
-                                <i class="bi bi-car-front text-secondary me-1"></i>
-                                Vehículo específico (opcional)
-                            </label>
-                            <InputSelect class="form-select" @bind-Value="formulario.IdVehiculo">
-                                <option value="">Sin asignar vehículo</option>
-                                @foreach (var vehiculo in vehiculosDisponibles)
-                                {
-                                    <option value="@vehiculo.IdVehiculo">
-                                        @vehiculo.Matricula — @vehiculo.Marca @vehiculo.Modelo
-                                    </option>
-                                }
-                            </InputSelect>
-                            <div class="form-text">
-                                Los vehículos se filtran por categoría, fechas y disponibilidad.
-                            </div>
-                        </div>
-
-                        <div class="col-12">
-                            <label class="form-label fw-semibold">Observaciones</label>
-                            <InputTextArea class="form-control"
-                                           @bind-Value="formulario.Observaciones"
-                                           maxlength="300"
-                                           rows="3" />
-                        </div>
-
+                    <div class="col-12 col-md-6 col-lg-4">
+                        <label class="form-label fw-semibold">Categoría</label>
+                        <InputSelect class="form-select"
+                                     @bind-Value="idCategoriaConsulta">
+                            <option value="0">Seleccione una categoría</option>
+                            @foreach (var categoria in categorias)
+                            {
+                                <option value="@categoria.IdCategoria">
+                                    @categoria.Nombre
+                                </option>
+                            }
+                        </InputSelect>
                     </div>
 
-                    <hr class="my-4" />
+                    <div class="col-12 col-md-6 col-lg-3">
+                        <label class="form-label fw-semibold">Fecha de inicio</label>
+                        <InputDate class="form-control"
+                                   @bind-Value="fechaInicioConsulta" />
+                    </div>
 
-                    <div class="d-flex flex-wrap gap-2">
-                        <button type="submit"
-                                class="btn btn-primary px-4"
-                                disabled="@Guardando">
-                            @if (Guardando)
-                            {
-                                <span class="spinner-border spinner-border-sm me-2"
-                                      aria-hidden="true"></span>
-                                <span>Guardando...</span>
-                            }
-                            else if (formulario.IdReserva == 0)
-                            {
-                                <i class="bi bi-calendar-plus me-2"></i>
-                                <span>Registrar reserva</span>
-                            }
-                            else
-                            {
-                                <i class="bi bi-check-circle me-2"></i>
-                                <span>Guardar cambios</span>
-                            }
+                    <div class="col-12 col-md-6 col-lg-3">
+                        <label class="form-label fw-semibold">Fecha de fin</label>
+                        <InputDate class="form-control"
+                                   @bind-Value="fechaFinConsulta" />
+                    </div>
+
+                    <div class="col-12 col-md-6 col-lg-2 d-flex align-items-end">
+                        <button type="button"
+                                class="btn btn-primary w-100"
+                                @onclick="ConsultarDisponibilidadAsync">
+                            <i class="bi bi-search me-2"></i>
+                            Consultar
                         </button>
-
-                        @if (formulario.IdReserva != 0)
-                        {
-                            <button type="button"
-                                    class="btn btn-outline-secondary px-4"
-                                    @onclick="CancelarEdicion"
-                                    disabled="@Guardando">
-                                <i class="bi bi-x-circle me-2"></i>
-                                Cancelar edición
-                            </button>
-                        }
                     </div>
-                </EditForm>
+
+                </div>
             </div>
         </div>
 
-        <div class="card border-0 shadow-sm rounded-3">
-            <div class="card-header bg-white border-0 p-4">
-                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-                    <div>
-                        <h2 class="h5 fw-bold mb-1">
-                            <i class="bi bi-card-list text-primary me-2"></i>
-                            Reservas registradas
-                        </h2>
-                        <p class="text-secondary small mb-0">
-                            Consulta el estado y los datos de las reservas registradas.
-                        </p>
-                    </div>
-
-                    <span class="badge bg-primary-subtle text-primary rounded-pill px-3 py-2">
-                        <i class="bi bi-calendar-check me-1"></i>
-                        Total: @reservas.Count
-                    </span>
-                </div>
+        @if (!string.IsNullOrWhiteSpace(mensajeDisponibilidad))
+        {
+            <div class="alert @(consultaRealizada && vehiculosConsulta.Count > 0 ? "alert-success" : "alert-info") shadow-sm"
+                 role="alert">
+                <i class="bi bi-info-circle-fill me-2"></i>
+                @mensajeDisponibilidad
             </div>
+        }
 
-            <div class="card-body p-0">
-                @if (reservas.Count == 0)
-                {
-                    <div class="text-center py-5">
-                        <i class="bi bi-calendar-x display-4 text-secondary"></i>
-                        <p class="fw-semibold mt-3 mb-1">
-                            No hay reservas registradas.
-                        </p>
-                        <p class="text-secondary small mb-0">
-                            Las reservas que registres aparecerán en esta tabla.
-                        </p>
+        @if (consultaRealizada)
+        {
+            <div class="card border-0 shadow-sm rounded-3">
+                <div class="card-header bg-white border-0 p-4">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                        <h2 class="h5 fw-bold mb-0">
+                            <i class="bi bi-car-front-fill text-primary me-2"></i>
+                            Resultados de la consulta
+                        </h2>
+
+                        <span class="badge bg-primary rounded-pill px-3 py-2">
+                            @vehiculosConsulta.Count disponibles
+                        </span>
                     </div>
-                }
-                else
+                </div>
+
+                @if (vehiculosConsulta.Count > 0)
                 {
                     <div class="table-responsive">
-                        <table class="table table-hover table-striped align-middle mb-0">
+                        <table class="table table-hover align-middle mb-0">
                             <thead class="table-light">
                                 <tr>
-                                    <th class="px-3 py-3">N.º</th>
-                                    <th class="py-3">Cliente</th>
-                                    <th class="py-3">Categoría</th>
-                                    <th class="py-3">Vehículo</th>
-                                    <th class="py-3">Sucursal</th>
-                                    <th class="py-3">Inicio</th>
-                                    <th class="py-3">Fin</th>
-                                    <th class="py-3">Estado</th>
-                                    <th class="py-3 text-center">Acciones</th>
+                                    <th class="px-4">Matrícula</th>
+                                    <th>Marca</th>
+                                    <th>Modelo</th>
+                                    <th>Año</th>
                                 </tr>
                             </thead>
 
                             <tbody>
-                                @foreach (var reserva in reservas)
+                                @foreach (var vehiculo in vehiculosConsulta)
                                 {
                                     <tr>
-                                        <td class="px-3 fw-semibold">
-                                            @reserva.IdReserva
+                                        <td class="px-4 fw-semibold">
+                                            @vehiculo.Matricula
                                         </td>
-
-                                        <td>
-                                            <div class="fw-semibold">
-                                                @reserva.IdClienteNavigation.Nombre
-                                                @reserva.IdClienteNavigation.Apellido
-                                            </div>
-                                        </td>
-
-                                        <td>
-                                            @reserva.IdCategoriaNavigation.Nombre
-                                        </td>
-
-                                        <td>
-                                            @if (reserva.IdVehiculoNavigation is not null)
-                                            {
-                                                @($"{reserva.IdVehiculoNavigation.Marca} {reserva.IdVehiculoNavigation.Modelo} — {reserva.IdVehiculoNavigation.Matricula}")
-                                            }
-                                            else
-                                            {
-                                                <span class="text-secondary fst-italic">
-                                                    Por asignar
-                                                </span>
-                                            }
-                                        </td>
-
-                                        <td>
-                                            @reserva.IdSucursalNavigation.Nombre
-                                        </td>
-
-                                        <td>
-                                            @reserva.FechaInicio.ToString("dd/MM/yyyy")
-                                        </td>
-
-                                        <td>
-                                            @reserva.FechaFin.ToString("dd/MM/yyyy")
-                                        </td>
-
-                                        <td>
-                                            @if (reserva.Estado == "cancelada")
-                                            {
-                                                <span class="badge rounded-pill bg-danger-subtle text-danger px-3 py-2">
-                                                    <i class="bi bi-x-circle-fill me-1"></i>
-                                                    @reserva.Estado
-                                                </span>
-                                            }
-                                            else
-                                            {
-                                                <span class="badge rounded-pill bg-success-subtle text-success px-3 py-2">
-                                                    <i class="bi bi-check-circle-fill me-1"></i>
-                                                    @reserva.Estado
-                                                </span>
-                                            }
-                                        </td>
-
-                                        <td>
-                                            <div class="d-flex justify-content-center flex-wrap gap-2">
-                                                @if (reserva.Estado != "cancelada" &&
-                                                     reserva.Contrato is null)
-                                                {
-                                                    <button type="button"
-                                                            class="btn btn-outline-primary btn-sm"
-                                                            @onclick="() => EditarReservaAsync(reserva.IdReserva)">
-                                                        <i class="bi bi-pencil-square me-1"></i>
-                                                        Editar
-                                                    </button>
-
-                                                    <button type="button"
-                                                            class="btn btn-outline-danger btn-sm"
-                                                            @onclick="() => CancelarReservaAsync(reserva.IdReserva)">
-                                                        <i class="bi bi-x-circle me-1"></i>
-                                                        Cancelar
-                                                    </button>
-                                                }
-                                                else if (reserva.Contrato is not null)
-                                                {
-                                                    <span class="badge bg-info-subtle text-info rounded-pill px-3 py-2">
-                                                        <i class="bi bi-file-earmark-text me-1"></i>
-                                                        Tiene contrato
-                                                    </span>
-                                                }
-                                                else
-                                                {
-                                                    <span class="text-secondary small">
-                                                        Cancelada
-                                                    </span>
-                                                }
-                                            </div>
-                                        </td>
+                                        <td>@vehiculo.Marca</td>
+                                        <td>@vehiculo.Modelo</td>
+                                        <td>@vehiculo.Anio</td>
                                     </tr>
                                 }
                             </tbody>
                         </table>
                     </div>
                 }
+                else
+                {
+                    <div class="card-body text-center py-5">
+                        <i class="bi bi-car-front text-secondary"
+                           style="font-size: 3rem;"></i>
+
+                        <h5 class="mt-3 mb-2">No hay vehículos disponibles</h5>
+
+                        <p class="text-secondary mb-0">
+                            No se encontraron vehículos para la categoría y las fechas seleccionadas.
+                        </p>
+                    </div>
+                }
             </div>
-        </div>
+        }
+    }
+    else
+    {
+        @if (!string.IsNullOrWhiteSpace(mensaje))
+        {
+            <div class="alert @(mensajeError ? "alert-danger" : "alert-success") shadow-sm border-0 rounded-3"
+                 role="alert">
+                <i class="bi @(mensajeError ? "bi-exclamation-triangle-fill" : "bi-check-circle-fill") me-2"></i>
+                @mensaje
+            </div>
+        }
+
+        @if (Cargando)
+        {
+            <div class="card border-0 shadow-sm rounded-3">
+                <div class="card-body text-center py-5">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Cargando...</span>
+                    </div>
+                    <p class="text-secondary mt-3 mb-0">
+                        Cargando información de reservas...
+                    </p>
+                </div>
+            </div>
+        }
+        else
+        {
+            @if (clientes.Count == 0 ||
+                 categorias.Count == 0 ||
+                 sucursales.Count == 0 ||
+                 usuarios.Count == 0)
+            {
+                <div class="alert alert-warning border-0 shadow-sm rounded-3"
+                     role="alert">
+                    <div class="d-flex align-items-start">
+                        <i class="bi bi-exclamation-triangle-fill me-2 mt-1"></i>
+                        <div>
+                            <strong>Faltan datos para registrar reservas.</strong>
+                            <p class="mb-1">
+                                Debes tener al menos un cliente activo, una categoría,
+                                una sucursal activa y un usuario activo.
+                            </p>
+                            <p class="mb-0">
+                                También necesitas vehículos activos en la categoría seleccionada.
+                                Cuando agregues los datos que faltan, podrás registrar reservas.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            }
+
+            <!-- FORMULARIO DE RESERVAS -->
+            <div class="card border-0 shadow-sm rounded-3 mb-4">
+                <div class="card-header bg-white border-0 px-4 pt-4">
+                    <h2 class="h5 fw-bold mb-1">
+                        @if (formulario.IdReserva == 0)
+                        {
+                            <i class="bi bi-calendar-plus text-primary me-2"></i>
+                            <span>Registrar reserva</span>
+                        }
+                        else
+                        {
+                            <i class="bi bi-pencil-square text-primary me-2"></i>
+                            <span>Modificar reserva</span>
+                        }
+                    </h2>
+                    <p class="text-secondary small mb-0">
+                        Complete los datos solicitados para gestionar la reserva.
+                    </p>
+                </div>
+
+                <div class="card-body p-4">
+                    <EditForm Model="formulario" OnValidSubmit="GuardarReservaAsync">
+                        <div class="row g-3">
+
+                            <div class="col-12 col-md-6">
+                                <label class="form-label fw-semibold">
+                                    Cliente <span class="text-danger">*</span>
+                                </label>
+                                <InputSelect class="form-select"
+                                             @bind-Value="formulario.IdCliente">
+                                    <option value="0">Seleccione un cliente</option>
+                                    @foreach (var cliente in clientes.Where(c =>
+                                        string.Equals(c.Estado, "activo",
+                                        StringComparison.OrdinalIgnoreCase)))
+                                    {
+                                        <option value="@cliente.IdCliente">
+                                            @cliente.Nombre @cliente.Apellido — @cliente.Documento
+                                        </option>
+                                    }
+                                </InputSelect>
+                            </div>
+
+                            <div class="col-12 col-md-6">
+                                <label class="form-label fw-semibold">
+                                    Categoría <span class="text-danger">*</span>
+                                </label>
+                                <InputSelect class="form-select"
+                                             @bind-Value="formulario.IdCategoria"
+                                             @bind-Value:after="ActualizarVehiculosDisponiblesAsync">
+                                    <option value="0">Seleccione una categoría</option>
+                                    @foreach (var categoria in categorias)
+                                    {
+                                        <option value="@categoria.IdCategoria">
+                                            @categoria.Nombre
+                                        </option>
+                                    }
+                                </InputSelect>
+                            </div>
+
+                            <div class="col-12 col-md-6">
+                                <label class="form-label fw-semibold">
+                                    Sucursal <span class="text-danger">*</span>
+                                </label>
+                                <InputSelect class="form-select"
+                                             @bind-Value="formulario.IdSucursal">
+                                    <option value="0">Seleccione una sucursal</option>
+                                    @foreach (var sucursal in sucursales.Where(s => s.Activa))
+                                    {
+                                        <option value="@sucursal.IdSucursal">
+                                            @sucursal.Nombre
+                                        </option>
+                                    }
+                                </InputSelect>
+                            </div>
+
+                            <div class="col-12 col-md-6">
+                                <label class="form-label fw-semibold">
+                                    Usuario que registra <span class="text-danger">*</span>
+                                </label>
+                                <InputSelect class="form-select"
+                                             @bind-Value="formulario.IdUsuario">
+                                    <option value="0">Seleccione un usuario</option>
+                                    @foreach (var usuario in usuarios.Where(u => u.Activo))
+                                    {
+                                        <option value="@usuario.IdUsuario">
+                                            @usuario.NombreCompleto
+                                        </option>
+                                    }
+                                </InputSelect>
+                            </div>
+
+                            <div class="col-12 col-md-6">
+                                <label class="form-label fw-semibold">
+                                    <i class="bi bi-calendar-event text-secondary me-1"></i>
+                                    Fecha de inicio <span class="text-danger">*</span>
+                                </label>
+                                <InputDate class="form-control"
+                                           @bind-Value="formulario.FechaInicio"
+                                           @bind-Value:after="ActualizarVehiculosDisponiblesAsync" />
+                            </div>
+
+                            <div class="col-12 col-md-6">
+                                <label class="form-label fw-semibold">
+                                    <i class="bi bi-calendar-event text-secondary me-1"></i>
+                                    Fecha de finalización <span class="text-danger">*</span>
+                                </label>
+                                <InputDate class="form-control"
+                                           @bind-Value="formulario.FechaFin"
+                                           @bind-Value:after="ActualizarVehiculosDisponiblesAsync" />
+                            </div>
+
+                            <div class="col-12">
+                                <label class="form-label fw-semibold">
+                                    <i class="bi bi-car-front text-secondary me-1"></i>
+                                    Vehículo específico (opcional)
+                                </label>
+                                <InputSelect class="form-select"
+                                             @bind-Value="formulario.IdVehiculo">
+                                    <option value="">Sin asignar vehículo</option>
+                                    @foreach (var vehiculo in vehiculosDisponibles)
+                                    {
+                                        <option value="@vehiculo.IdVehiculo">
+                                            @vehiculo.Matricula — @vehiculo.Marca @vehiculo.Modelo
+                                        </option>
+                                    }
+                                </InputSelect>
+                                <div class="form-text">
+                                    Los vehículos se filtran por categoría, fechas y disponibilidad.
+                                </div>
+                            </div>
+
+                            <div class="col-12">
+                                <label class="form-label fw-semibold">Observaciones</label>
+                                <InputTextArea class="form-control"
+                                               @bind-Value="formulario.Observaciones"
+                                               maxlength="300"
+                                               rows="3" />
+                            </div>
+
+                        </div>
+
+                        <hr class="my-4" />
+
+                        <div class="d-flex flex-wrap gap-2">
+                            <button type="submit"
+                                    class="btn btn-primary px-4"
+                                    disabled="@Guardando">
+                                @if (Guardando)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-2"
+                                          aria-hidden="true"></span>
+                                    <span>Guardando...</span>
+                                }
+                                else if (formulario.IdReserva == 0)
+                                {
+                                    <i class="bi bi-calendar-plus me-2"></i>
+                                    <span>Registrar reserva</span>
+                                }
+                                else
+                                {
+                                    <i class="bi bi-check-circle me-2"></i>
+                                    <span>Guardar cambios</span>
+                                }
+                            </button>
+
+                            @if (formulario.IdReserva != 0)
+                            {
+                                <button type="button"
+                                        class="btn btn-outline-secondary px-4"
+                                        @onclick="CancelarEdicion"
+                                        disabled="@Guardando">
+                                    <i class="bi bi-x-circle me-2"></i>
+                                    Cancelar edición
+                                </button>
+                            }
+                        </div>
+                    </EditForm>
+                </div>
+            </div>
+
+            <!-- TABLA DE RESERVAS -->
+            <div class="card border-0 shadow-sm rounded-3">
+                <div class="card-header bg-white border-0 p-4">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                        <div>
+                            <h2 class="h5 fw-bold mb-1">
+                                <i class="bi bi-card-list text-primary me-2"></i>
+                                Reservas registradas
+                            </h2>
+                            <p class="text-secondary small mb-0">
+                                Consulta el estado y los datos de las reservas registradas.
+                            </p>
+                        </div>
+
+                        <span class="badge bg-primary-subtle text-primary rounded-pill px-3 py-2">
+                            <i class="bi bi-calendar-check me-1"></i>
+                            Total: @reservas.Count
+                        </span>
+                    </div>
+                </div>
+
+                <div class="card-body p-0">
+                    @if (reservas.Count == 0)
+                    {
+                        <div class="text-center py-5">
+                            <i class="bi bi-calendar-x display-4 text-secondary"></i>
+                            <p class="fw-semibold mt-3 mb-1">
+                                No hay reservas registradas.
+                            </p>
+                            <p class="text-secondary small mb-0">
+                                Las reservas que registres aparecerán en esta tabla.
+                            </p>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-hover table-striped align-middle mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th class="px-3 py-3">N.º</th>
+                                        <th class="py-3">Cliente</th>
+                                        <th class="py-3">Categoría</th>
+                                        <th class="py-3">Vehículo</th>
+                                        <th class="py-3">Sucursal</th>
+                                        <th class="py-3">Inicio</th>
+                                        <th class="py-3">Fin</th>
+                                        <th class="py-3">Estado</th>
+                                        <th class="py-3 text-center">Acciones</th>
+                                    </tr>
+                                </thead>
+
+                                <tbody>
+                                    @foreach (var reserva in reservas)
+                                    {
+                                        <tr>
+                                            <td class="px-3 fw-semibold">
+                                                @reserva.IdReserva
+                                            </td>
+
+                                            <td>
+                                                <div class="fw-semibold">
+                                                    @reserva.IdClienteNavigation.Nombre
+                                                    @reserva.IdClienteNavigation.Apellido
+                                                </div>
+                                            </td>
+
+                                            <td>
+                                                @reserva.IdCategoriaNavigation.Nombre
+                                            </td>
+
+                                            <td>
+                                                @if (reserva.IdVehiculoNavigation is not null)
+                                                {
+                                                    @($"{reserva.IdVehiculoNavigation.Marca} {reserva.IdVehiculoNavigation.Modelo} — {reserva.IdVehiculoNavigation.Matricula}")
+                                                }
+                                                else
+                                                {
+                                                    <span class="text-secondary fst-italic">
+                                                        Por asignar
+                                                    </span>
+                                                }
+                                            </td>
+
+                                            <td>
+                                                @reserva.IdSucursalNavigation.Nombre
+                                            </td>
+
+                                            <td>
+                                                @reserva.FechaInicio.ToString("dd/MM/yyyy")
+                                            </td>
+
+                                            <td>
+                                                @reserva.FechaFin.ToString("dd/MM/yyyy")
+                                            </td>
+
+                                            <td>
+                                                @if (reserva.Estado == "cancelada")
+                                                {
+                                                    <span class="badge rounded-pill bg-danger-subtle text-danger px-3 py-2">
+                                                        <i class="bi bi-x-circle-fill me-1"></i>
+                                                        @reserva.Estado
+                                                    </span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="badge rounded-pill bg-success-subtle text-success px-3 py-2">
+                                                        <i class="bi bi-check-circle-fill me-1"></i>
+                                                        @reserva.Estado
+                                                    </span>
+                                                }
+                                            </td>
+
+                                            <td>
+                                                <div class="d-flex justify-content-center flex-wrap gap-2">
+                                                    @if (reserva.Estado != "cancelada" &&
+                                                         reserva.Contrato is null)
+                                                    {
+                                                        <button type="button"
+                                                                class="btn btn-outline-primary btn-sm"
+                                                                @onclick="() => EditarReservaAsync(reserva.IdReserva)">
+                                                            <i class="bi bi-pencil-square me-1"></i>
+                                                            Editar
+                                                        </button>
+
+                                                        <button type="button"
+                                                                class="btn btn-outline-danger btn-sm"
+                                                                @onclick="() => CancelarReservaAsync(reserva.IdReserva)">
+                                                            <i class="bi bi-x-circle me-1"></i>
+                                                            Cancelar
+                                                        </button>
+                                                    }
+                                                    else if (reserva.Contrato is not null)
+                                                    {
+                                                        <span class="badge bg-info-subtle text-info rounded-pill px-3 py-2">
+                                                            <i class="bi bi-file-earmark-text me-1"></i>
+                                                            Tiene contrato
+                                                        </span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="text-secondary small">
+                                                            Cancelada
+                                                        </span>
+                                                    }
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
     }
 </div>
 
@@ -415,6 +570,17 @@
     private bool mensajeError;
     private string mensaje = "";
     private int versionMensaje;
+
+    // Variables de la pestaña de disponibilidad.
+    private bool MostrarDisponibilidad;
+
+    private int idCategoriaConsulta;
+    private DateTime fechaInicioConsulta = DateTime.Today;
+    private DateTime fechaFinConsulta = DateTime.Today.AddDays(1);
+
+    private List<Vehiculo> vehiculosConsulta = new();
+    private bool consultaRealizada;
+    private string mensajeDisponibilidad = "";
 
     protected override async Task OnInitializedAsync()
     {
@@ -615,6 +781,37 @@
         {
             formulario.IdVehiculo = null;
         }
+    }
+
+    // CONSULTAR DISPONIBILIDAD DESDE LA PESTAÑA.
+    private async Task ConsultarDisponibilidadAsync()
+    {
+        mensajeDisponibilidad = "";
+        vehiculosConsulta.Clear();
+        consultaRealizada = false;
+
+        if (idCategoriaConsulta <= 0)
+        {
+            mensajeDisponibilidad = "Seleccione una categoría.";
+            return;
+        }
+
+        if (fechaFinConsulta <= fechaInicioConsulta)
+        {
+            mensajeDisponibilidad = "La fecha de fin debe ser posterior a la fecha de inicio.";
+            return;
+        }
+
+        vehiculosConsulta = await ObtenerVehiculosDisponiblesAsync(
+            idCategoriaConsulta,
+            fechaInicioConsulta,
+            fechaFinConsulta);
+
+        consultaRealizada = true;
+
+        mensajeDisponibilidad = vehiculosConsulta.Count == 0
+            ? "No hay vehículos disponibles para la categoría y las fechas seleccionadas."
+            : $"Se encontraron {vehiculosConsulta.Count} vehículos disponibles.";
     }
 
     private async Task GuardarReservaAsync()
