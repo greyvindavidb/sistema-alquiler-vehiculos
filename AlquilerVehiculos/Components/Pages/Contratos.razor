@@ -1,8 +1,13 @@
 @page "/contratos"
 @rendermode InteractiveServer
+@attribute [Authorize]
 
+@using System.Security.Claims
 @using AlquilerVehiculos.Data
 @using AlquilerVehiculos.Models
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Forms
 @using Microsoft.EntityFrameworkCore
 
 @inject IDbContextFactory<AlquilerDbContext> DbFactory
@@ -13,125 +18,133 @@
 <div class="container-fluid py-4">
     <div class="mb-4">
         <h1 class="h3 fw-bold mb-1">
-            <i class="bi bi-file-earmark-text-fill text-primary me-2"></i>
-            Contratos de alquiler
+            <i class="bi bi-file-earmark-text-fill text-primary me-2"></i>Contratos de alquiler
         </h1>
-        <p class="text-secondary mb-0">
-            Convierte una reserva confirmada en contrato y consulta los contratos registrados.
-        </p>
+        <p class="text-secondary mb-0">Registra alquileres directos o convierte reservas confirmadas en contratos.</p>
     </div>
 
-    @if (!string.IsNullOrWhiteSpace(mensaje))
+    @if (!string.IsNullOrEmpty(mensaje))
     {
-        <div class="alert @(mensajeError ? "alert-danger" : "alert-success")" role="alert">
-            @mensaje
-        </div>
+        <div class="alert @(mensajeError ? "alert-danger" : "alert-success")" role="alert">@mensaje</div>
     }
 
     @if (cargando)
     {
         <div class="text-center py-5">
-            <div class="spinner-border text-primary" role="status">
-                <span class="visually-hidden">Cargando...</span>
-            </div>
+            <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Cargando...</span></div>
         </div>
     }
     else
     {
         <div class="card border-0 shadow-sm rounded-3 mb-4">
             <div class="card-header bg-white px-4 pt-4 border-0">
-                <h2 class="h5 fw-bold mb-1">Crear contrato desde una reserva</h2>
-                <p class="text-secondary small mb-0">
-                    El precio diario actual se guarda en el contrato para conservar el importe acordado.
-                </p>
+                <h2 class="h5 fw-bold mb-1">Nuevo contrato</h2>
+                <p class="text-secondary small mb-0">La reserva es opcional. El precio por día queda fijado al guardar el contrato.</p>
             </div>
             <div class="card-body p-4">
-                @if (reservas.Count == 0)
-                {
-                    <div class="alert alert-info mb-0">
-                        No hay reservas confirmadas pendientes de convertir en contrato.
-                    </div>
-                }
-                else
-                {
-                    <EditForm Model="formulario" OnValidSubmit="CrearContratoAsync">
-                        <div class="row g-3">
-                            <div class="col-12 col-lg-6">
-                                <label class="form-label fw-semibold" for="reserva">Reserva</label>
-                                <InputSelect id="reserva"
-                                             class="form-select"
-                                             @bind-Value="formulario.IdReserva"
-                                             @bind-Value:after="ActualizarReservaSeleccionadaAsync">
-                                    <option value="0">Seleccione una reserva</option>
-                                    @foreach (var reserva in reservas)
-                                    {
-                                        <option value="@reserva.IdReserva">
-                                            #@reserva.IdReserva — @reserva.Cliente — @reserva.Categoria
-                                        </option>
-                                    }
-                                </InputSelect>
-                            </div>
-                            <div class="col-12 col-lg-6">
-                                <label class="form-label fw-semibold" for="usuario">Usuario que registra</label>
-                                <InputSelect id="usuario" class="form-select" @bind-Value="formulario.IdUsuario">
-                                    <option value="0">Seleccione un usuario</option>
-                                    @foreach (var usuario in usuarios)
-                                    {
-                                        <option value="@usuario.IdUsuario">@usuario.NombreCompleto</option>
-                                    }
-                                </InputSelect>
-                            </div>
+                <EditForm Model="formulario" OnValidSubmit="CrearContratoAsync">
+                    <div class="row g-3">
+                        <div class="col-12 col-lg-6">
+                            <label class="form-label fw-semibold" for="reserva">Origen del contrato (opcional)</label>
+                            <InputSelect id="reserva" class="form-select"
+                                         @bind-Value="formulario.IdReserva"
+                                         @bind-Value:after="ActualizarReservaSeleccionadaAsync">
+                                <option value="0">Sin reserva — alquiler directo</option>
+                                @foreach (var reserva in reservas)
+                                {
+                                    <option value="@reserva.IdReserva">
+                                        Reserva #@reserva.IdReserva — @reserva.Cliente — @reserva.Categoria
+                                    </option>
+                                }
+                            </InputSelect>
+                            <small class="text-secondary">Selecciona una reserva o déjalo en «Sin reserva».</small>
+                        </div>
 
+                        <div class="col-12 col-lg-6">
+                            <label class="form-label fw-semibold" for="usuario">Usuario responsable *</label>
+                            <input id="usuario" class="form-control" value="@usuarioActualNombre" readonly />
+                        </div>
+
+                        <div class="col-12 col-lg-6">
+                            <label class="form-label fw-semibold" for="cliente">Cliente *</label>
+                            <InputSelect id="cliente" class="form-select" @bind-Value="formulario.IdCliente"
+                                         disabled="@(reservaSeleccionada is not null)">
+                                <option value="0">Seleccione un cliente</option>
+                                @foreach (var cliente in clientes)
+                                {
+                                    <option value="@cliente.IdCliente">@cliente.Nombre @cliente.Apellido</option>
+                                }
+                            </InputSelect>
                             @if (reservaSeleccionada is not null)
                             {
-                                <div class="col-12 col-lg-6">
-                                    <label class="form-label fw-semibold" for="vehiculo">Vehículo</label>
-                                    <InputSelect id="vehiculo" class="form-select" @bind-Value="formulario.IdVehiculo">
-                                        <option value="0">Seleccione un vehículo disponible</option>
-                                        @foreach (var vehiculo in vehiculosDisponibles)
-                                        {
-                                            <option value="@vehiculo.IdVehiculo">
-                                                @vehiculo.Matricula — @vehiculo.Marca @vehiculo.Modelo
-                                            </option>
-                                        }
-                                    </InputSelect>
-                                    @if (vehiculosDisponibles.Count == 0)
-                                    {
-                                        <small class="text-danger">
-                                            No hay vehículos disponibles para las fechas de esta reserva.
-                                        </small>
-                                    }
-                                </div>
-
-                                <div class="col-12 col-lg-6">
-                                    <div class="rounded-3 bg-light p-3 h-100">
-                                        <div><strong>Cliente:</strong> @reservaSeleccionada.Cliente</div>
-                                        <div><strong>Período:</strong> @reservaSeleccionada.FechaInicio.ToString("d") - @reservaSeleccionada.FechaFin.ToString("d")</div>
-                                        @if (precioDia.HasValue)
-                                        {
-                                            <div><strong>Tarifa:</strong> @precioDia.Value.ToString("C2") por día</div>
-                                            <div><strong>Total estimado:</strong> @TotalEstimado.ToString("C2") (@DiasPactados días)</div>
-                                        }
-                                        else
-                                        {
-                                            <div class="text-danger">
-                                                No hay una tarifa activa para la categoría @reservaSeleccionada.Categoria.
-                                            </div>
-                                        }
-                                    </div>
-                                </div>
+                                <small class="text-secondary">El cliente corresponde a la reserva seleccionada.</small>
                             }
                         </div>
 
-                        <div class="mt-4">
-                            <button type="submit"
-                                    class="btn btn-primary"
-                                    disabled="@(guardando || reservaSeleccionada is null || !precioDia.HasValue || vehiculosDisponibles.Count == 0 || usuarios.Count == 0)">
-                                @(guardando ? "Creando contrato..." : "Crear contrato")
-                            </button>
+                        <div class="col-12 col-lg-6">
+                            <label class="form-label fw-semibold" for="sucursal">Sucursal *</label>
+                            <InputSelect id="sucursal" class="form-select" @bind-Value="formulario.IdSucursal"
+                                         disabled="@(reservaSeleccionada is not null)">
+                                <option value="0">Seleccione una sucursal</option>
+                                @foreach (var sucursal in sucursales)
+                                {
+                                    <option value="@sucursal.IdSucursal">@sucursal.Nombre</option>
+                                }
+                            </InputSelect>
                         </div>
-                    </EditForm>
-                }
+
+                        <div class="col-12 col-lg-6">
+                            <label class="form-label fw-semibold" for="inicio">Fecha y hora de inicio *</label>
+                            <InputDate id="inicio" class="form-control" Type="InputDateType.DateTimeLocal"
+                                       @bind-Value="formulario.FechaInicio"
+                                       @bind-Value:after="ActualizarDisponibilidadAsync" />
+                        </div>
+                        <div class="col-12 col-lg-6">
+                            <label class="form-label fw-semibold" for="fin">Fecha y hora de fin pactada *</label>
+                            <InputDate id="fin" class="form-control" Type="InputDateType.DateTimeLocal"
+                                       @bind-Value="formulario.FechaFinPactada"
+                                       @bind-Value:after="ActualizarDisponibilidadAsync" />
+                        </div>
+
+                        <div class="col-12 col-lg-6">
+                            <label class="form-label fw-semibold" for="vehiculo">Vehículo *</label>
+                            <InputSelect id="vehiculo" class="form-select" @bind-Value="formulario.IdVehiculo"
+                                         @bind-Value:after="ActualizarVehiculoSeleccionadoAsync">
+                                <option value="0">Seleccione un vehículo disponible</option>
+                                @foreach (var vehiculo in vehiculosDisponibles)
+                                {
+                                    <option value="@vehiculo.IdVehiculo">@vehiculo.Matricula — @vehiculo.Marca @vehiculo.Modelo</option>
+                                }
+                            </InputSelect>
+                            @if (formulario.FechaInicio.HasValue && formulario.FechaFinPactada.HasValue &&
+                                 formulario.FechaFinPactada > formulario.FechaInicio && vehiculosDisponibles.Count == 0)
+                            {
+                                <small class="text-danger">No hay vehículos disponibles para este período.</small>
+                            }
+                        </div>
+
+                        <div class="col-12">
+                            <div class="rounded-3 bg-light p-3">
+                                <div><strong>Precio por día:</strong> @(precioDia.HasValue ? precioDia.Value.ToString("C2") : "Sin tarifa activa / seleccione vehículo")</div>
+                                <div><strong>Días pactados:</strong> @DiasPactados</div>
+                                <div><strong>Total estimado:</strong> @TotalEstimado.ToString("C2")</div>
+                                @if (reservaSeleccionada is not null)
+                                {
+                                    <div class="text-primary small mt-2">Al guardar, la reserva #@reservaSeleccionada.IdReserva pasará a «convertida».</div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="d-flex flex-wrap gap-2 mt-4">
+                        <button type="submit" class="btn btn-primary" disabled="@guardando">
+                            <i class="bi bi-check-circle me-1"></i>@(guardando ? "Guardando..." : "Crear contrato")
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary" @onclick="LimpiarFormularioAsync" disabled="@guardando">
+                            Cancelar / limpiar
+                        </button>
+                    </div>
+                </EditForm>
             </div>
         </div>
 
@@ -149,11 +162,8 @@
                     <table class="table table-hover align-middle mb-0">
                         <thead class="table-light">
                             <tr>
-                                <th class="px-4">Contrato</th>
-                                <th>Cliente / vehículo</th>
-                                <th>Período</th>
-                                <th>Tarifa / total</th>
-                                <th>Estado</th>
+                                <th class="px-4">Contrato</th><th>Cliente / vehículo</th><th>Período</th>
+                                <th>KM salida</th><th>Tarifa / total</th><th>Estado</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -162,27 +172,13 @@
                                 <tr @key="contrato.IdContrato">
                                     <td class="px-4">
                                         <div class="fw-semibold">#@contrato.IdContrato</div>
-                                        <small class="text-secondary">
-                                            @(contrato.IdReserva.HasValue ? $"Reserva #{contrato.IdReserva}" : "Sin reserva")
-                                        </small>
+                                        <small class="text-secondary">@(contrato.IdReserva.HasValue ? $"Reserva #{contrato.IdReserva}" : "Sin reserva")</small>
                                     </td>
-                                    <td>
-                                        <div>@contrato.Cliente</div>
-                                        <small class="text-secondary">@contrato.Matricula — @contrato.Vehiculo</small>
-                                    </td>
-                                    <td>
-                                        @contrato.FechaInicio.ToString("d") - @contrato.FechaFinPactada.ToString("d")
-                                        <small class="d-block text-secondary">@contrato.DiasPactados días</small>
-                                    </td>
-                                    <td>
-                                        <div>@contrato.PrecioDiaAplicado.ToString("C2") / día</div>
-                                        <strong>@contrato.TotalAlquiler.ToString("C2")</strong>
-                                    </td>
-                                    <td>
-                                        <span class="badge @(contrato.Estado == "abierto" ? "text-bg-primary" : "text-bg-secondary")">
-                                            @contrato.Estado
-                                        </span>
-                                    </td>
+                                    <td><div>@contrato.Cliente</div><small class="text-secondary">@contrato.Matricula — @contrato.Vehiculo</small></td>
+                                    <td>@contrato.FechaInicio.ToString("g") - @contrato.FechaFinPactada.ToString("g")
+                                        <small class="d-block text-secondary">@contrato.DiasPactados días</small></td>
+                                    <td><div>@contrato.PrecioDiaAplicado.ToString("C2") / día</div><strong>@contrato.TotalAlquiler.ToString("C2")</strong></td>
+                                    <td><span class="badge @(contrato.Estado == "abierto" ? "text-bg-primary" : "text-bg-secondary")">@contrato.Estado</span></td>
                                 </tr>
                             }
                         </tbody>
@@ -194,27 +190,37 @@
 </div>
 
 @code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthenticationStateTask { get; set; }
+
     private List<ReservaOpcion> reservas = new();
-    private List<Usuario> usuarios = new();
+    private List<Cliente> clientes = new();
+    private List<Sucursal> sucursales = new();
     private List<Vehiculo> vehiculosDisponibles = new();
     private List<ContratoFila> contratos = new();
     private ReservaOpcion? reservaSeleccionada;
     private FormularioContrato formulario = new();
+    private int idUsuarioActual;
+    private string usuarioActualNombre = "Usuario no identificado";
     private decimal? precioDia;
     private bool cargando = true;
     private bool guardando;
     private bool mensajeError;
     private string? mensaje;
 
-    private int DiasPactados => reservaSeleccionada is null
-        ? 0
-        : (int)Math.Ceiling((reservaSeleccionada.FechaFin - reservaSeleccionada.FechaInicio).TotalDays);
-
-    private decimal TotalEstimado =>
-        precioDia.GetValueOrDefault() * DiasPactados;
+    private int DiasPactados => formulario.FechaInicio.HasValue && formulario.FechaFinPactada.HasValue &&
+        formulario.FechaFinPactada.Value > formulario.FechaInicio.Value
+        ? (int)Math.Ceiling((formulario.FechaFinPactada.Value - formulario.FechaInicio.Value).TotalDays)
+        : 0;
+    private decimal TotalEstimado => precioDia.GetValueOrDefault() * DiasPactados;
 
     protected override async Task OnInitializedAsync()
     {
+        if (AuthenticationStateTask is not null)
+        {
+            var estado = await AuthenticationStateTask;
+            int.TryParse(estado.User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out idUsuarioActual);
+            usuarioActualNombre = estado.User.Identity?.Name ?? "Usuario no identificado";
+        }
         await CargarDatosAsync();
     }
 
@@ -224,53 +230,42 @@
         try
         {
             await using var db = await DbFactory.CreateDbContextAsync();
-            reservas = await db.Reserva
-                .AsNoTracking()
+            reservas = await db.Reserva.AsNoTracking()
                 .Where(r => r.Estado == "confirmada" && r.Contrato == null)
                 .OrderBy(r => r.FechaInicio)
                 .Select(r => new ReservaOpcion
                 {
-                    IdReserva = r.IdReserva,
-                    IdCliente = r.IdCliente,
+                    IdReserva = r.IdReserva, IdCliente = r.IdCliente,
                     Cliente = r.IdClienteNavigation.Nombre + " " + r.IdClienteNavigation.Apellido,
-                    IdCategoria = r.IdCategoria,
-                    Categoria = r.IdCategoriaNavigation.Nombre,
-                    IdVehiculo = r.IdVehiculo,
-                    IdSucursal = r.IdSucursal,
-                    FechaInicio = r.FechaInicio,
-                    FechaFin = r.FechaFin
-                })
-                .ToListAsync();
+                    IdCategoria = r.IdCategoria, Categoria = r.IdCategoriaNavigation.Nombre,
+                    IdVehiculo = r.IdVehiculo, IdSucursal = r.IdSucursal,
+                    FechaInicio = r.FechaInicio, FechaFin = r.FechaFin
+                }).ToListAsync();
 
-            usuarios = await db.Usuario
-                .AsNoTracking()
-                .Where(u => u.Activo)
-                .OrderBy(u => u.NombreCompleto)
-                .ToListAsync();
+            clientes = await db.Cliente.AsNoTracking().Where(c => c.Estado == "activo")
+                .OrderBy(c => c.Nombre).ThenBy(c => c.Apellido).ToListAsync();
+            sucursales = await db.Sucursal.AsNoTracking().Where(s => s.Activa)
+                .OrderBy(s => s.Nombre).ToListAsync();
 
-            contratos = await db.Contrato
-                .AsNoTracking()
-                .OrderByDescending(c => c.FechaCreacion)
+            contratos = await db.Contrato.AsNoTracking().OrderByDescending(c => c.FechaCreacion)
                 .Select(c => new ContratoFila
                 {
-                    IdContrato = c.IdContrato,
-                    IdReserva = c.IdReserva,
+                    IdContrato = c.IdContrato, IdReserva = c.IdReserva,
                     Cliente = c.IdClienteNavigation.Nombre + " " + c.IdClienteNavigation.Apellido,
                     Matricula = c.IdVehiculoNavigation.Matricula,
                     Vehiculo = c.IdVehiculoNavigation.Marca + " " + c.IdVehiculoNavigation.Modelo,
-                    FechaInicio = c.FechaInicio,
-                    FechaFinPactada = c.FechaFinPactada,
-                    DiasPactados = c.DiasPactados,
-                    PrecioDiaAplicado = c.PrecioDiaAplicado,
-                    TotalAlquiler = c.TotalAlquiler,
-                    Estado = c.Estado
-                })
-                .ToListAsync();
+                    FechaInicio = c.FechaInicio, FechaFinPactada = c.FechaFinPactada,
+                    DiasPactados = c.DiasPactados, PrecioDiaAplicado = c.PrecioDiaAplicado,
+                    TotalAlquiler = c.TotalAlquiler, Estado = c.Estado,
+                  
+                }).ToListAsync();
+
+            await ActualizarDisponibilidadAsync();
         }
         catch (Exception ex)
         {
             Logger.LogError(ex, "No se pudieron cargar los contratos.");
-            MostrarMensaje("No se pudieron cargar los contratos. Verifica la conexión con la base de datos.", true);
+            MostrarMensaje("Completa cliente, sucursal, vehículo y usuario.", true);
         }
         finally
         {
@@ -281,246 +276,276 @@
     private async Task ActualizarReservaSeleccionadaAsync()
     {
         reservaSeleccionada = reservas.FirstOrDefault(r => r.IdReserva == formulario.IdReserva);
+        formulario.IdCliente = reservaSeleccionada?.IdCliente ?? 0;
+        formulario.IdSucursal = reservaSeleccionada?.IdSucursal ?? 0;
+        formulario.FechaInicio = reservaSeleccionada?.FechaInicio;
+        formulario.FechaFinPactada = reservaSeleccionada?.FechaFin;
         formulario.IdVehiculo = reservaSeleccionada?.IdVehiculo ?? 0;
-        vehiculosDisponibles.Clear();
         precioDia = null;
         mensaje = null;
+        await ActualizarDisponibilidadAsync();
+    }
 
-        if (reservaSeleccionada is null)
-        {
-            return;
-        }
-
+    private async Task ActualizarDisponibilidadAsync()
+    {
         try
         {
             await using var db = await DbFactory.CreateDbContextAsync();
-            var tarifa = await db.Tarifa
-                .AsNoTracking()
-                .Where(t => t.IdCategoria == reservaSeleccionada.IdCategoria && t.Activa)
-                .Select(t => (decimal?)t.PrecioDia)
-                .FirstOrDefaultAsync();
-            precioDia = tarifa;
+            var idCategoriaReserva = reservaSeleccionada?.IdCategoria;
+            var idReservaExcluir = reservaSeleccionada?.IdReserva ?? 0;
+            var listaAnterior = formulario.IdVehiculo;
 
-            vehiculosDisponibles = await ObtenerVehiculosDisponiblesAsync(
-                db,
-                reservaSeleccionada.IdCategoria,
-                reservaSeleccionada.FechaInicio,
-                reservaSeleccionada.FechaFin,
-                reservaSeleccionada.IdReserva);
+            vehiculosDisponibles = await ObtenerVehiculosDisponiblesAsync(db,
+                formulario.FechaInicio, formulario.FechaFinPactada,
+                idReservaExcluir, idCategoriaReserva, reservaSeleccionada?.IdVehiculo);
+
+            if (!vehiculosDisponibles.Any(v => v.IdVehiculo == listaAnterior))
+            {
+                formulario.IdVehiculo = 0;
+
+            }
+
+            await ActualizarTarifaAsync(db);
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "No se pudo cargar la información de la reserva seleccionada.");
-            MostrarMensaje("No se pudo cargar la tarifa o la disponibilidad de esta reserva.", true);
+            Logger.LogError(ex, "No se pudo actualizar la disponibilidad de contratos.");
+            MostrarMensaje("No se pudo consultar la disponibilidad. Inténtalo nuevamente.", true);
         }
     }
 
-    private async Task<List<Vehiculo>> ObtenerVehiculosDisponiblesAsync(
-        AlquilerDbContext db,
-        int idCategoria,
-        DateTime fechaInicio,
-        DateTime fechaFin,
-        int idReservaExcluir)
+    private async Task ActualizarVehiculoSeleccionadoAsync()
     {
-        if (fechaFin <= fechaInicio)
+  
+        try
         {
-            return new List<Vehiculo>();
+            await using var db = await DbFactory.CreateDbContextAsync();
+            await ActualizarTarifaAsync(db);
         }
-
-        var vehiculosCategoria = await db.Vehiculo
-            .AsNoTracking()
-            .Where(v => v.IdCategoria == idCategoria && v.Estado == "activo")
-            .OrderBy(v => v.Matricula)
-            .ToListAsync();
-        var idsVehiculos = vehiculosCategoria.Select(v => v.IdVehiculo).ToList();
-        if (idsVehiculos.Count == 0)
+        catch (Exception ex)
         {
-            return new List<Vehiculo>();
+            Logger.LogError(ex, "No se pudo consultar la tarifa.");
+            MostrarMensaje("No se pudo consultar la tarifa activa.", true);
         }
+    }
 
-        var reservasSuperpuestas = await db.Reserva
-            .AsNoTracking()
-            .Where(r =>
-                r.Estado == "confirmada" &&
-                r.FechaInicio < fechaFin &&
-                r.FechaFin > fechaInicio &&
-                r.IdReserva != idReservaExcluir &&
-                r.Contrato == null)
-            .Select(r => new { r.IdCategoria, r.IdVehiculo })
-            .ToListAsync();
+    private async Task ActualizarTarifaAsync(AlquilerDbContext db)
+    {
+        precioDia = null;
+        var vehiculo = vehiculosDisponibles.FirstOrDefault(v => v.IdVehiculo == formulario.IdVehiculo);
+        if (vehiculo is null) return;
 
-        var vehiculosReservados = reservasSuperpuestas
-            .Where(r => r.IdVehiculo.HasValue)
-            .Select(r => r.IdVehiculo!.Value)
-            .ToHashSet();
-        var reservasSinVehiculo = reservasSuperpuestas.Count(r =>
-            r.IdCategoria == idCategoria && r.IdVehiculo == null);
+        precioDia = await db.Tarifa.AsNoTracking()
+            .Where(t => t.IdCategoria == vehiculo.IdCategoria && t.Activa)
+            .Select(t => (decimal?)t.PrecioDia).FirstOrDefaultAsync();
+    }
 
-        var idsConContrato = await db.Contrato
-            .AsNoTracking()
-            .Where(c =>
-                c.Estado == "abierto" &&
-                c.FechaInicio < fechaFin &&
-                c.FechaFinPactada > fechaInicio &&
-                idsVehiculos.Contains(c.IdVehiculo))
-            .Select(c => c.IdVehiculo)
-            .Distinct()
-            .ToListAsync();
-        vehiculosReservados.UnionWith(idsConContrato);
+    // Lista de vehículos libres para las fechas indicadas, descontando reservas por categoría.
+    // Para evitar falsos positivos, cualquier contrato abierto bloquea el vehículo,
+    // aunque su período no se solape (coincide con el índice único de SQL Server).
+    private static async Task<List<Vehiculo>> ObtenerVehiculosDisponiblesAsync(
+        AlquilerDbContext db, DateTime? inicio, DateTime? fin, int idReservaExcluir,
+        int? idCategoria, int? idVehiculoPreferido)
+    {
+        var consulta = db.Vehiculo.AsNoTracking().Where(v => v.Estado == "activo");
+        if (idCategoria.HasValue)
+            consulta = consulta.Where(v => v.IdCategoria == idCategoria.Value);
 
-        var mantenimientos = await db.Mantenimiento
-            .AsNoTracking()
-            .Where(m => m.Estado == "en_curso" && idsVehiculos.Contains(m.IdVehiculo))
-            .ToListAsync();
-        var fechaInicioDateOnly = DateOnly.FromDateTime(fechaInicio);
-        var fechaFinDateOnly = DateOnly.FromDateTime(fechaFin);
+        var vehiculos = await consulta.OrderBy(v => v.Matricula).ToListAsync();
+        if (inicio is null || fin is null || fin <= inicio)
+            return vehiculos;
 
-        foreach (var mantenimiento in mantenimientos)
-        {
-            if (mantenimiento.FechaInicio <= fechaFinDateOnly &&
-                (!mantenimiento.FechaFin.HasValue ||
-                 mantenimiento.FechaFin.Value >= fechaInicioDateOnly))
-            {
-                vehiculosReservados.Add(mantenimiento.IdVehiculo);
-            }
-        }
+        var ids = vehiculos.Select(v => v.IdVehiculo).ToList();
+        if (ids.Count == 0) return vehiculos;
 
-        var libres = vehiculosCategoria
-            .Where(v => !vehiculosReservados.Contains(v.IdVehiculo))
+        var idsConContrato = await db.Contrato.AsNoTracking()
+            .Where(c => c.Estado == "abierto" && ids.Contains(c.IdVehiculo))
+            .Select(c => c.IdVehiculo).ToListAsync();
+        var ocupados = idsConContrato.ToHashSet();
+
+        var reservasSolapadas = await db.Reserva.AsNoTracking()
+            .Where(r => r.Estado == "confirmada" && r.IdReserva != idReservaExcluir &&
+                r.FechaInicio < fin.Value && r.FechaFin > inicio.Value)
+            .Select(r => new { r.IdCategoria, r.IdVehiculo }).ToListAsync();
+        foreach (var r in reservasSolapadas.Where(r => r.IdVehiculo.HasValue))
+            ocupados.Add(r.IdVehiculo!.Value);
+
+        var fechaInicio = DateOnly.FromDateTime(inicio.Value);
+        var fechaFin = DateOnly.FromDateTime(fin.Value);
+        var mantenimientos = await db.Mantenimiento.AsNoTracking()
+            .Where(m => m.Estado == "en_curso" && ids.Contains(m.IdVehiculo))
+            .Select(m => new { m.IdVehiculo, m.FechaInicio, m.FechaFin }).ToListAsync();
+        foreach (var m in mantenimientos)
+            if (m.FechaInicio <= fechaFin && (!m.FechaFin.HasValue || m.FechaFin >= fechaInicio))
+                ocupados.Add(m.IdVehiculo);
+
+        var libres = vehiculos.Where(v => !ocupados.Contains(v.IdVehiculo)).ToList();
+        // Una reserva de categoría sin vehículo ocupa un cupo, no un vehículo concreto.
+        // Si hay cupos suficientes, cualquier vehículo de esa categoría puede asignarse.
+        var porCategoria = libres.GroupBy(v => v.IdCategoria);
+        return porCategoria
+            .Where(g => g.Count() > reservasSolapadas.Count(r => r.IdCategoria == g.Key && !r.IdVehiculo.HasValue))
+            .SelectMany(g => g)
+            .OrderBy(v => v.IdVehiculo == idVehiculoPreferido ? 0 : 1)
+            .ThenBy(v => v.Matricula)
             .ToList();
-        return libres.Take(Math.Max(0, libres.Count - reservasSinVehiculo)).ToList();
     }
 
     private async Task CrearContratoAsync()
     {
-        if (guardando)
+        if (guardando) return;
+        mensaje = null;
+
+        if (formulario.IdCliente <= 0 || formulario.IdSucursal <= 0 || formulario.IdVehiculo <= 0 ||
+            idUsuarioActual <= 0)
         {
+            MostrarMensaje("Completa cliente, sucursal, vehículo y usuario ", true);
             return;
         }
-
-        if (reservaSeleccionada is null ||
-            precioDia is null ||
-            DiasPactados <= 0 ||
-            formulario.IdVehiculo <= 0 ||
-            formulario.IdUsuario <= 0)
+        if (!formulario.FechaInicio.HasValue || !formulario.FechaFinPactada.HasValue ||
+            formulario.FechaFinPactada.Value <= formulario.FechaInicio.Value)
         {
-            MostrarMensaje("Selecciona una reserva, un vehículo disponible y un usuario activo.", true);
+            MostrarMensaje("La fecha de fin debe ser posterior a la fecha de inicio.", true);
             return;
         }
 
         guardando = true;
-        mensaje = null;
         try
         {
             await using var db = await DbFactory.CreateDbContextAsync();
             await using var transaccion = await db.Database.BeginTransactionAsync();
+            Reserva? reserva = null;
 
-            var reserva = await db.Reserva
-                .FirstOrDefaultAsync(r =>
-                    r.IdReserva == formulario.IdReserva &&
-                    r.Estado == "confirmada");
-            if (reserva is null ||
-                await db.Contrato.AnyAsync(c => c.IdReserva == formulario.IdReserva))
+            if (formulario.IdReserva > 0)
             {
-                MostrarMensaje("La reserva ya no está disponible para convertirse en contrato.", true);
-                return;
+                reserva = await db.Reserva.FirstOrDefaultAsync(r =>
+                    r.IdReserva == formulario.IdReserva && r.Estado == "confirmada");
+                if (reserva is null || await db.Contrato.AnyAsync(c => c.IdReserva == formulario.IdReserva))
+                {
+                    MostrarMensaje("La reserva ya no está disponible para convertirse en contrato.", true);
+                    return;
+                }
+                if (formulario.IdCliente != reserva.IdCliente || formulario.IdSucursal != reserva.IdSucursal)
+                {
+                    MostrarMensaje("El cliente y la sucursal deben coincidir con los de la reserva.", true);
+                    return;
+                }
+                if (reserva.IdVehiculo.HasValue && reserva.IdVehiculo != formulario.IdVehiculo)
+                {
+                    MostrarMensaje("Este contrato debe utilizar el vehículo asignado a la reserva.", true);
+                    return;
+                }
             }
 
+            var inicio = formulario.FechaInicio.Value;
+            var fin = formulario.FechaFinPactada.Value;
             var clienteValido = await db.Cliente.AnyAsync(c =>
-                c.IdCliente == reserva.IdCliente &&
-                c.Estado == "activo" &&
-                c.LicenciaVencimiento >= DateOnly.FromDateTime(reserva.FechaFin));
+                c.IdCliente == formulario.IdCliente && c.Estado == "activo" &&
+                c.LicenciaVencimiento >= DateOnly.FromDateTime(fin));
             if (!clienteValido)
             {
-                MostrarMensaje("El cliente debe estar activo y tener la licencia vigente hasta el final del alquiler.", true);
+                MostrarMensaje("El cliente debe estar activo y su licencia vigente hasta el final del alquiler.", true);
                 return;
             }
-
-            if (!await db.Usuario.AnyAsync(u => u.IdUsuario == formulario.IdUsuario && u.Activo))
+            if (!await db.Usuario.AnyAsync(u => u.IdUsuario == idUsuarioActual && u.Activo))
             {
-                MostrarMensaje("Selecciona un usuario activo.", true);
+                MostrarMensaje("La sesión no corresponde a un usuario activo.", true);
                 return;
             }
-
-            if (!await db.Sucursal.AnyAsync(s => s.IdSucursal == reserva.IdSucursal && s.Activa))
+            if (!await db.Sucursal.AnyAsync(s => s.IdSucursal == formulario.IdSucursal && s.Activa))
             {
-                MostrarMensaje("La sucursal de la reserva no está activa.", true);
+                MostrarMensaje("Selecciona una sucursal activa.", true);
                 return;
             }
 
-            var precioActual = await db.Tarifa
-                .Where(t => t.IdCategoria == reserva.IdCategoria && t.Activa)
-                .Select(t => (decimal?)t.PrecioDia)
-                .FirstOrDefaultAsync();
-            if (!precioActual.HasValue)
-            {
-                MostrarMensaje("No hay una tarifa activa para la categoría de la reserva.", true);
-                return;
-            }
-
-            var disponibles = await ObtenerVehiculosDisponiblesAsync(
-                db,
-                reserva.IdCategoria,
-                reserva.FechaInicio,
-                reserva.FechaFin,
-                reserva.IdReserva);
-            var vehiculo = disponibles.FirstOrDefault(v => v.IdVehiculo == formulario.IdVehiculo);
+            var vehiculo = await db.Vehiculo.AsNoTracking()
+                .FirstOrDefaultAsync(v => v.IdVehiculo == formulario.IdVehiculo && v.Estado == "activo");
             if (vehiculo is null)
             {
-                MostrarMensaje("El vehículo seleccionado ya no está disponible. Actualiza la página e inténtalo de nuevo.", true);
+                MostrarMensaje("El vehículo no está activo o ya no existe.", true);
+                return;
+            }
+            if (reserva is not null && reserva.IdCategoria != vehiculo.IdCategoria)
+            {
+                MostrarMensaje("El vehículo debe pertenecer a la categoría de la reserva.", true);
+                return;
+            }
+            if (await db.Contrato.AnyAsync(c => c.IdVehiculo == vehiculo.IdVehiculo && c.Estado == "abierto"))
+            {
+                MostrarMensaje("Este vehículo ya tiene un contrato abierto.", true);
                 return;
             }
 
-            var dias = (int)Math.Ceiling((reserva.FechaFin - reserva.FechaInicio).TotalDays);
-            if (dias <= 0)
+            var disponibles = await ObtenerVehiculosDisponiblesAsync(db, inicio, fin,
+                reserva?.IdReserva ?? 0, reserva?.IdCategoria, reserva?.IdVehiculo);
+            if (!disponibles.Any(v => v.IdVehiculo == vehiculo.IdVehiculo))
             {
-                MostrarMensaje("El período de la reserva no es válido para crear un contrato.", true);
+                MostrarMensaje("El vehículo ya no está disponible para las fechas indicadas.", true);
                 return;
             }
 
-            db.Contrato.Add(new Contrato
+            var tarifa = await db.Tarifa.AsNoTracking()
+                .Where(t => t.IdCategoria == vehiculo.IdCategoria && t.Activa)
+                .Select(t => (decimal?)t.PrecioDia).FirstOrDefaultAsync();
+            if (!tarifa.HasValue || tarifa.Value <= 0)
             {
-                IdReserva = reserva.IdReserva,
-                IdCliente = reserva.IdCliente,
+                MostrarMensaje("La categoría del vehículo no tiene una tarifa activa válida.", true);
+                return;
+            }
+
+            var dias = (int)Math.Ceiling((fin - inicio).TotalDays);
+            var contrato = new Contrato
+            {
+                IdReserva = reserva?.IdReserva, // NULL para alquiler directo
+                IdCliente = formulario.IdCliente,
                 IdVehiculo = vehiculo.IdVehiculo,
-                IdSucursal = reserva.IdSucursal,
-                IdUsuario = formulario.IdUsuario,
-                FechaInicio = reserva.FechaInicio,
-                FechaFinPactada = reserva.FechaFin,
-                PrecioDiaAplicado = precioActual.Value,
+                IdSucursal = formulario.IdSucursal,
+                IdUsuario = idUsuarioActual,
+                FechaInicio = inicio,
+                FechaFinPactada = fin,
+                PrecioDiaAplicado = tarifa.Value,
                 DiasPactados = dias,
-                TotalAlquiler = precioActual.Value * dias,
+                TotalAlquiler = tarifa.Value * dias,
                 Estado = "abierto",
                 FechaCreacion = DateTime.Now
-            });
-
-            reserva.IdVehiculo = vehiculo.IdVehiculo;
-            reserva.Estado = "convertida";
+            };
+            db.Contrato.Add(contrato);
+            if (reserva is not null)
+            {
+                reserva.IdVehiculo = vehiculo.IdVehiculo;
+                reserva.Estado = "convertida";
+            }
 
             await db.SaveChangesAsync();
             await transaccion.CommitAsync();
-
-            formulario = new FormularioContrato();
-            reservaSeleccionada = null;
-            precioDia = null;
-            vehiculosDisponibles.Clear();
+            await LimpiarFormularioAsync();
             await CargarDatosAsync();
-            MostrarMensaje("El contrato se creó correctamente.", false);
+            MostrarMensaje($"Contrato #{contrato.IdContrato} creado correctamente.", false);
         }
         catch (DbUpdateException ex)
         {
-            Logger.LogError(ex, "No se pudo crear el contrato.");
-            MostrarMensaje("No se pudo crear el contrato. Verifica que la reserva y el vehículo sigan disponibles.", true);
+            Logger.LogError(ex, "Conflicto al guardar el contrato.");
+            MostrarMensaje("No se pudo crear el contrato: verifica que el vehículo no tenga un contrato abierto y que la reserva siga disponible.", true);
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Ocurrió un error al crear el contrato.");
-            MostrarMensaje("Ocurrió un error al crear el contrato.", true);
+            Logger.LogError(ex, "Error al crear contrato.");
+            MostrarMensaje("Ocurrió un error al crear el contrato. Revisa los datos e inténtalo de nuevo.", true);
         }
         finally
         {
             guardando = false;
         }
+    }
+
+    private async Task LimpiarFormularioAsync()
+    {
+        formulario = new FormularioContrato();
+        reservaSeleccionada = null;
+        vehiculosDisponibles.Clear();
+        precioDia = null;
+        mensaje = null;
+        await ActualizarDisponibilidadAsync();
     }
 
     private void MostrarMensaje(string texto, bool error)
@@ -532,8 +557,12 @@
     private sealed class FormularioContrato
     {
         public int IdReserva { get; set; }
+        public int IdCliente { get; set; }
+        public int IdSucursal { get; set; }
         public int IdVehiculo { get; set; }
-        public int IdUsuario { get; set; }
+        public DateTime? FechaInicio { get; set; }
+        public DateTime? FechaFinPactada { get; set; }
+      
     }
 
     private sealed class ReservaOpcion
